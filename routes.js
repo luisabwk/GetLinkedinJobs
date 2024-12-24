@@ -8,6 +8,8 @@ router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawl
     log.info(`Scraping job listings: ${request.loadedUrl}`);
 
     const li_at = process.env.li_at || crawlerInput?.li_at;
+    log.info(`Cookie li_at received: ${li_at ? 'YES' : 'NO'}`);
+
     if (!li_at) {
         throw new Error('Cookie "li_at" is missing from the input.');
     }
@@ -46,6 +48,8 @@ router.addHandler('jobDetail', async ({ request, page, log, crawlerInput }) => {
     log.info(`Scraping job details: ${request.loadedUrl}`);
 
     const li_at = process.env.li_at || crawlerInput?.li_at;
+    log.info(`Cookie li_at received: ${li_at ? 'YES' : 'NO'}`);
+
     if (!li_at) {
         throw new Error('Cookie "li_at" is missing from the input.');
     }
