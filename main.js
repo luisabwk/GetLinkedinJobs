@@ -2,6 +2,7 @@
 import { Actor } from 'apify';
 import { PuppeteerCrawler } from 'crawlee';
 import { router } from './routes.js';
+import randomUserAgent from 'random-useragent';
 
 await Actor.init();
 
@@ -16,7 +17,10 @@ const startUrls = jobUrl
     ? [{ url: jobUrl, label: 'jobDetail' }]
     : [{ url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`, label: 'jobListing' }];
 
-const proxyConfiguration = await Actor.createProxyConfiguration(proxyConfig);
+const proxyConfiguration = await Actor.createProxyConfiguration({
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'], // Use proxies residenciais para melhorar a taxa de sucesso
+});
 
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
@@ -26,6 +30,10 @@ const crawler = new PuppeteerCrawler({
             args: ['--disable-gpu'],
         },
     },
+    preNavigationHooks: [async ({ page }) => {
+        const userAgent = randomUserAgent.getRandom();
+        await page.setUserAgent(userAgent);
+    }],
 });
 
 await crawler.run(startUrls);
