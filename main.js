@@ -7,6 +7,8 @@ import randomUserAgent from 'random-useragent';
 await Actor.init();
 
 const input = await Actor.getInput();
+console.log('Input received:', input);
+
 const { searchTerm, location, jobUrl, proxyConfig, li_at } = input;
 
 if (!li_at) {
@@ -30,6 +32,7 @@ const crawler = new PuppeteerCrawler({
             args: ['--disable-gpu'],
         },
     },
+    requestHandlerContext: input, // Propaga o input para os handlers
     preNavigationHooks: [async ({ page }) => {
         const userAgent = randomUserAgent.getRandom();
         await page.setUserAgent(userAgent);
