@@ -31,6 +31,9 @@ router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawl
     // Enqueue links to job details if available
     const jobLinks = jobs.map(job => ({ url: job.link, label: 'jobDetail' }));
     await enqueueLinks({ requests: jobLinks });
+
+    // Add delay between requests to avoid rate limiting
+    await new Promise((resolve) => setTimeout(resolve, 3000)); // 3-second delay
 });
 
 // Handler for scraping job details
@@ -57,4 +60,7 @@ router.addHandler('jobDetail', async ({ request, page, log, crawlerInput }) => {
 
     await Dataset.pushData({ ...jobDetails, url: request.loadedUrl });
     log.info(`Job details saved.`);
+
+    // Add delay between requests to avoid rate limiting
+    await new Promise((resolve) => setTimeout(resolve, 3000)); // 3-second delay
 });
