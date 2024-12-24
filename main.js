@@ -1,7 +1,7 @@
 // main.js
 import { Actor } from 'apify';
 import { PuppeteerCrawler } from 'crawlee';
-import { router } from './routes.js';
+import router from './routes.js';
 import randomUserAgent from 'random-useragent';
 
 await Actor.init();
@@ -26,12 +26,13 @@ const proxyConfiguration = await Actor.createProxyConfiguration({
 
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
-    requestHandler: async (context) => router(context, input), // Passa o input diretamente ao router
+    requestHandler: router,
     launchContext: {
         launchOptions: {
             args: ['--disable-gpu'],
         },
     },
+    requestHandlerContext: input, // Propaga o input para os handlers
     preNavigationHooks: [async ({ page }) => {
         const userAgent = randomUserAgent.getRandom();
         await page.setUserAgent(userAgent);
