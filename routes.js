@@ -1,7 +1,7 @@
 // routes.js
 import { Dataset, createPuppeteerRouter } from 'crawlee';
 
-export const router = createPuppeteerRouter();
+const router = createPuppeteerRouter();
 
 // Handler for scraping job listings
 router.addHandler('jobListing', async ({ request, page, log, enqueueLinks }, input) => {
