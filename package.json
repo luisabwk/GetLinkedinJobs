@@ -10,6 +10,7 @@
   "dependencies": {
     "apify": "^3.0.0",
     "crawlee": "^3.0.0",
-    "puppeteer": "^22.8.2"
+    "puppeteer": "^22.8.2",
+    "random-useragent": "^0.5.0"
   }
 }
