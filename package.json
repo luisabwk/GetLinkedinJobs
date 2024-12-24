@@ -1,0 +1,14 @@
+{
+  "name": "linkedin-scraper-apify",
+  "version": "1.0.0",
+  "description": "LinkedIn scraper actor",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "apify": "^3.0.0",
+    "crawlee": "^3.0.0"
+  }
+}
