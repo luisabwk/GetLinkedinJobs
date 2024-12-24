@@ -7,10 +7,15 @@ export const router = createPuppeteerRouter();
 router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawlerInput }) => {
     log.info(`Scraping job listings: ${request.loadedUrl}`);
 
+    const li_at = crawlerInput?.li_at;
+    if (!li_at) {
+        throw new Error('Cookie "li_at" is missing from the input.');
+    }
+
     // Set the LinkedIn session cookie
     await page.setCookie({
         name: 'li_at',
-        value: crawlerInput.li_at,
+        value: li_at,
         domain: '.linkedin.com',
     });
 
@@ -40,10 +45,15 @@ router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawl
 router.addHandler('jobDetail', async ({ request, page, log, crawlerInput }) => {
     log.info(`Scraping job details: ${request.loadedUrl}`);
 
+    const li_at = crawlerInput?.li_at;
+    if (!li_at) {
+        throw new Error('Cookie "li_at" is missing from the input.');
+    }
+
     // Set the LinkedIn session cookie
     await page.setCookie({
         name: 'li_at',
-        value: crawlerInput.li_at,
+        value: li_at,
         domain: '.linkedin.com',
     });
 
