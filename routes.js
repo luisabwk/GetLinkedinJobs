@@ -7,7 +7,7 @@ export const router = createPuppeteerRouter();
 router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawlerInput }) => {
     log.info(`Scraping job listings: ${request.loadedUrl}`);
 
-    const li_at = crawlerInput?.li_at;
+    const li_at = process.env.li_at || crawlerInput?.li_at;
     if (!li_at) {
         throw new Error('Cookie "li_at" is missing from the input.');
     }
@@ -45,7 +45,7 @@ router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawl
 router.addHandler('jobDetail', async ({ request, page, log, crawlerInput }) => {
     log.info(`Scraping job details: ${request.loadedUrl}`);
 
-    const li_at = crawlerInput?.li_at;
+    const li_at = process.env.li_at || crawlerInput?.li_at;
     if (!li_at) {
         throw new Error('Cookie "li_at" is missing from the input.');
     }
