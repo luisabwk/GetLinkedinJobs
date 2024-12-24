@@ -1,34 +1,44 @@
-router.addHandler('jobListing', async ({ request, page, log, enqueueLinks }, input) => {
-    log.info(`Scraping job listings: ${request.loadedUrl}`);
+// main.js
+import { Actor } from 'apify';
+import { PuppeteerCrawler } from 'crawlee';
+import router from './routes.js';
+import randomUserAgent from 'random-useragent';
 
-    const li_at = input.li_at;
-    log.info(`Cookie li_at received: ${li_at ? 'YES' : 'NO'}`);
+await Actor.init();
 
-    if (!li_at) {
-        throw new Error('Cookie "li_at" is missing from the input.');
-    }
+const input = await Actor.getInput();
+console.log('Input received:', input);
 
-    await page.setCookie({
-        name: 'li_at',
-        value: li_at,
-        domain: '.linkedin.com',
-    });
+const { searchTerm, location, jobUrl, proxyConfig, li_at } = input;
 
-    await page.goto(request.loadedUrl, { waitUntil: 'domcontentloaded' });
+if (!li_at) {
+    throw new Error('The LinkedIn session cookie "li_at" is required.');
+}
 
-    const jobs = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll('.job-card-container--clickable')).map(job => ({
-            title: job.querySelector('.job-card-list__title')?.innerText.trim() || '',
-            company: job.querySelector('.job-card-container__company-name')?.innerText.trim() || '',
-            location: job.querySelector('.job-card-container__metadata-item')?.innerText.trim() || '',
-            link: job.querySelector('a')?.href || '',
-        }));
-    });
+const startUrls = jobUrl
+    ? [{ url: jobUrl, label: 'jobDetail' }]
+    : [{ url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`, label: 'jobListing' }];
 
-    await Dataset.pushData(jobs);
-    log.info(`Scraped ${jobs.length} jobs.`);
-    const jobLinks = jobs.map(job => ({ url: job.link, label: 'jobDetail' }));
-    await enqueueLinks({ requests: jobLinks });
-
-    await new Promise((resolve) => setTimeout(resolve, 3000)); // 3-second delay
+const proxyConfiguration = await Actor.createProxyConfiguration({
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'], // Use proxies residenciais para melhorar a taxa de sucesso
 });
+
+const crawler = new PuppeteerCrawler({
+    proxyConfiguration,
+    requestHandler: router,
+    launchContext: {
+        launchOptions: {
+            args: ['--disable-gpu'],
+        },
+    },
+    requestHandlerContext: input, // Propaga o input para os handlers
+    preNavigationHooks: [async ({ page }) => {
+        const userAgent = randomUserAgent.getRandom();
+        await page.setUserAgent(userAgent);
+    }],
+});
+
+await crawler.run(startUrls);
+
+await Actor.exit();
