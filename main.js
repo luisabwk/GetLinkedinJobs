@@ -26,13 +26,12 @@ const proxyConfiguration = await Actor.createProxyConfiguration({
 
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
-    requestHandler: router,
+    requestHandler: (context) => router(context, input), // Passa o input diretamente ao router
     launchContext: {
         launchOptions: {
             args: ['--disable-gpu'],
         },
     },
-    requestHandlerContext: input, // Propaga o input para os handlers
     preNavigationHooks: [async ({ page }) => {
         const userAgent = randomUserAgent.getRandom();
         await page.setUserAgent(userAgent);
