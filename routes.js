@@ -1,30 +1,75 @@
 import { Dataset, createPuppeteerRouter } from 'crawlee';
-import { getJobDetails } from './job-details.js';
-import { extractJobListings } from './scrape-jobs.js';
 
 export const router = createPuppeteerRouter();
 
-router.addHandler('LIST', async ({ request, page, log, crawler }) => {
-    log.info('Processing job listings page');
-    const input = await crawler.getInput();
-    const jobs = await extractJobListings(page, input.maxJobs);
-    
-    for (const job of jobs.vagas) {
-        await crawler.addRequests([{
-            url: job.link,
-            userData: { 
-                label: 'DETAIL',
-                baseJob: job
-            }
-        }]);
-    }
+router.addHandler('LIST', async ({ request, page, log }) => {
+   log.info('Processing job listings page');
+   
+   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
+   
+   const cookies = [{ 
+       name: 'li_at', 
+       value: request.userData.li_at,
+       domain: '.linkedin.com' 
+   }];
+   
+   await page.setCookie(...cookies);
+   
+   await page.setRequestInterception(true);
+   page.on('request', (req) => {
+       const resourceType = req.resourceType();
+       if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
+           req.abort();
+       } else {
+           req.continue();
+       }
+   });
+
+   await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
+
+   const jobs = await page.evaluate(() => {
+       const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
+       return jobElements.map(job => ({
+           vaga: job.querySelector('.job-card-list__title--link')?.innerText.trim().replace(/\n/g, ' ') || '',
+           empresa: job.querySelector('.artdeco-entity-lockup__subtitle')?.innerText.trim() || '',
+           local: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().replace(/\(.*?\)/, '').trim() || '',
+           formato: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().match(/\(([^)]+)\)/)?.[1] || '',
+           link: job.querySelector('a')?.href || ''
+       }));
+   });
+
+   for (const job of jobs) {
+       await router.addRequests([{
+           url: job.link,
+           userData: { 
+               label: 'DETAIL',
+               jobData: job
+           }
+       }]);
+   }
 });
 
 router.addHandler('DETAIL', async ({ request, page, log }) => {
-    log.info('Processing job detail');
-    const jobDetails = await getJobDetails(page);
-    await Dataset.pushData({
-        ...request.userData.baseJob,
-        ...jobDetails
-    });
+   log.info('Processing job details');
+   
+   await page.waitForSelector('#job-details', { timeout: 30000 });
+   
+   try {
+       const seeMoreButton = await page.$('.jobs-description__footer-button');
+       if (seeMoreButton) await seeMoreButton.click();
+   } catch (e) {
+       log.debug('See more button not found');
+   }
+
+   const details = await page.evaluate(() => ({
+       title: document.querySelector('.job-details-jobs-unified-top-card__job-title')?.innerText.trim() || '',
+       company: document.querySelector('.job-details-jobs-unified-top-card__company-name')?.innerText.trim() || '',
+       location: document.querySelector('.job-details-jobs-unified-top-card__primary-description-container')?.innerText.trim().split(' ·')[0].trim() || '',
+       description: document.querySelector('#job-details')?.innerText.trim() || ''
+   }));
+
+   await Dataset.pushData({
+       ...request.userData.jobData,
+       ...details
+   });
 });
