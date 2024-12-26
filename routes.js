@@ -36,7 +36,7 @@ router.addHandler('jobListing', async ({ request, page, log, enqueueLinks }, inp
     const jobLinks = jobs.map(job => ({ url: job.link, label: 'jobDetail' }));
     await enqueueLinks({ requests: jobLinks });
 
-    await new Promise((resolve) => setTimeout(resolve, 3000)); // 3-second delay
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // 5-second delay
 });
 
 export default router;
