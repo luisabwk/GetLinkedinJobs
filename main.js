@@ -1,7 +1,6 @@
-// main.js
 import { Actor } from 'apify';
-import { PuppeteerCrawler } from 'crawlee';
-import router from './routes.js';
+import { PuppeteerCrawler } from 'crawlee'; 
+import { router } from './routes.js';
 
 await Actor.init();
 
@@ -13,7 +12,7 @@ if (!searchTerm || !location || !li_at) {
 }
 
 const proxyConfiguration = await Actor.createProxyConfiguration({
-    groups: ['RESIDENTIAL']
+    groups: ['RESIDENTIAL'] 
 });
 
 const crawler = new PuppeteerCrawler({
@@ -33,7 +32,7 @@ const crawler = new PuppeteerCrawler({
 await crawler.run([{ 
     url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}&geoId=106057199&f_TPR=r86400&start=0&position=1`,
     userData: { 
-        label: 'LIST', 
+        label: 'LIST',
         li_at,
         maxJobs,
         retryCount: 0
