@@ -21,18 +21,17 @@ const startUrls = jobUrl
 
 const proxyConfiguration = await Actor.createProxyConfiguration({
     useApifyProxy: true,
-    apifyProxyGroups: ['RESIDENTIAL'], // Use proxies residenciais para melhorar a taxa de sucesso
+    apifyProxyGroups: ['RESIDENTIAL'],
 });
 
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
-    requestHandler: router,
+    requestHandler: async (context) => router(context, input), // Encaminha o input ao router
     launchContext: {
         launchOptions: {
             args: ['--disable-gpu'],
         },
     },
-    requestHandlerContext: input, // Propaga o input para os handlers
     preNavigationHooks: [async ({ page }) => {
         const userAgent = randomUserAgent.getRandom();
         await page.setUserAgent(userAgent);
