@@ -1,0 +1,36 @@
+{
+  "actorSpecification": 1,
+  "name": "linkedin-scraper-apify",
+  "title": "LinkedIn Job Scraper",
+  "version": "1.0.0",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "LinkedIn Jobs Dataset",
+      "views": {
+        "jobs": {
+          "title": "Jobs",
+          "transformation": {
+            "fields": [
+              "title",
+              "company",
+              "location", 
+              "workType",
+              "description",
+              "url",
+              "scrapedAt"
+            ]
+          },
+          "display": {
+            "component": "table",
+            "properties": {
+              "scrapedAt": {
+                "format": "date"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
