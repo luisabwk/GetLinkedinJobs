@@ -13,18 +13,8 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
         domain: '.linkedin.com'
     });
 
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-        const resourceType = req.resourceType();
-        if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
-            req.abort();
-        } else {
-            req.continue();
-        }
-    });
-
     try {
-        await page.waitForSelector('.scaffold-layout__list', { timeout: 60000 });
+        await page.waitForSelector('.jobs-search-results-list', { timeout: 60000 });
 
         const jobs = await page.evaluate(() => {
             const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
@@ -48,6 +38,7 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
         }
     } catch (error) {
         log.error(`Failed to process listing: ${error.message}`);
+        throw error;
     }
 });
 
