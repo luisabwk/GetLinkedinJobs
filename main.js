@@ -1,3 +1,4 @@
+// main.js
 import { Actor } from 'apify';
 import { PuppeteerCrawler } from 'crawlee';
 import { router } from './routes.js';
@@ -19,12 +20,13 @@ const crawler = new PuppeteerCrawler({
     proxyConfiguration,
     requestHandler: router,
     maxConcurrency: 1,
+    maxRequestRetries: 3,
     maxRequestsPerCrawl: maxJobs * 2,
-    maxRequestRetries: 5,
-    requestHandlerTimeoutSecs: 120,
-    navigationTimeoutSecs: 120,
+    requestHandlerTimeoutSecs: 180,
+    navigationTimeoutSecs: 180,
     browserPoolOptions: {
-        maxOpenPagesPerBrowser: 1
+        maxOpenPagesPerBrowser: 1,
+        useFingerprints: true
     }
 });
 
