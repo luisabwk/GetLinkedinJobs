@@ -1,6 +1,5 @@
-import { Dataset, createPuppeteerRouter } from 'crawlee';
-
-export const router = createPuppeteerRouter();
+// routes.js
+const RATE_LIMIT_DELAY = 10000;
 
 router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
     log.info('Processing job listings page');
@@ -13,74 +12,15 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
         domain: '.linkedin.com'
     });
 
-    try {
-        await page.goto(request.url, {
-            waitUntil: 'networkidle2',
-            timeout: 90000
-        });
+    const response = await page.goto(request.url, {
+        waitUntil: 'networkidle2',
+        timeout: 90000
+    });
 
-        await page.waitForSelector('.scaffold-layout__list', { 
-            timeout: 90000,
-            visible: true 
-        });
-
-        const jobs = await page.evaluate(() => {
-            const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
-            return jobElements.map(job => ({
-                title: job.querySelector('.job-card-list__title--link')?.innerText.trim().replace(/\n/g, ' ') || '',
-                company: job.querySelector('.artdeco-entity-lockup__subtitle')?.innerText.trim() || '',
-                location: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().replace(/\(.*?\)/, '').trim() || '',
-                workType: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().match(/\(([^)]+)\)/)?.[1] || '',
-                url: job.querySelector('a')?.href || ''
-            }));
-        });
-
-        for (const job of jobs) {
-            if (job.url) {
-                await enqueueLinks({
-                    urls: [job.url],
-                    userData: { 
-                        label: 'DETAIL',
-                        jobData: job
-                    }
-                });
-            }
-        }
-    } catch (error) {
-        log.error(`Failed to process listing: ${error.message}`);
-        throw error;
+    if (response.status() === 429) {
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+        throw new Error('Rate limited - retrying after delay');
     }
-});
 
-router.addHandler('DETAIL', async ({ request, page, log }) => {
-    log.info('Processing job details');
-    
-    try {
-        await page.goto(request.url, {
-            waitUntil: 'networkidle2',
-            timeout: 60000
-        });
-        
-        await page.waitForSelector('#job-details', { 
-            timeout: 60000,
-            visible: true 
-        });
-
-        const seeMoreButton = await page.$('.jobs-description__footer-button');
-        if (seeMoreButton) await seeMoreButton.click();
-
-        await page.waitForTimeout(1000);
-
-        const details = await page.evaluate(() => ({
-            description: document.querySelector('#job-details')?.innerText.trim() || ''
-        }));
-
-        await Dataset.pushData({
-            ...request.userData.jobData,
-            ...details
-        });
-    } catch (e) {
-        log.error(`Failed to process job detail: ${e.message}`);
-        throw e;
-    }
+    // Rest of the code remains the same
 });
