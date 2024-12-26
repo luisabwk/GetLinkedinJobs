@@ -1,3 +1,9 @@
+// routes.js
+import { Dataset, createPuppeteerRouter } from 'crawlee';
+
+const router = createPuppeteerRouter();
+
+// Handler for scraping job listings
 router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawlerInput }) => {
     log.info(`Scraping job listings: ${request.loadedUrl}`);
 
@@ -32,3 +38,5 @@ router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawl
 
     await new Promise((resolve) => setTimeout(resolve, 3000)); // 3-second delay
 });
+
+export default router;
