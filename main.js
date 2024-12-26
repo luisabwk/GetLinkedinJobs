@@ -1,43 +1,32 @@
-// main.js
 import { Actor } from 'apify';
 import { PuppeteerCrawler } from 'crawlee';
-import router from './routes.js';
-import randomUserAgent from 'random-useragent';
+import { router } from './routes.js';
 
 await Actor.init();
 
 const input = await Actor.getInput();
-console.log('Input received:', input);
+const { searchTerm, location, li_at, maxJobs = 50 } = input;
 
-const { searchTerm, location, jobUrl, proxyConfig, li_at } = input;
-
-if (!li_at) {
-    throw new Error('The LinkedIn session cookie "li_at" is required.');
+if (!searchTerm || !location || !li_at) {
+    throw new Error('searchTerm, location and li_at are required');
 }
 
-const startUrls = jobUrl
-    ? [{ url: jobUrl, label: 'jobDetail' }]
-    : [{ url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`, label: 'jobListing' }];
+const startUrls = [{
+    url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}&geoId=106057199&f_TPR=r86400`,
+    userData: { label: 'LIST' }
+}];
 
-const proxyConfiguration = await Actor.createProxyConfiguration({
-    useApifyProxy: true,
-    apifyProxyGroups: ['RESIDENTIAL'],
-});
+const proxyConfiguration = await Actor.createProxyConfiguration();
 
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
-    requestHandler: async (context) => router(context, input), // Passa o input diretamente ao router
+    requestHandler: router,
     launchContext: {
         launchOptions: {
-            args: ['--disable-gpu'],
-        },
-    },
-    preNavigationHooks: [async ({ page }) => {
-        const userAgent = randomUserAgent.getRandom();
-        await page.setUserAgent(userAgent);
-    }],
+            args: ['--disable-gpu']
+        }
+    }
 });
 
 await crawler.run(startUrls);
-
 await Actor.exit();
