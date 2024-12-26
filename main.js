@@ -11,10 +11,7 @@ if (!searchTerm || !location || !li_at) {
     throw new Error('searchTerm, location and li_at are required');
 }
 
-const startUrls = [{
-    url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}&geoId=106057199&f_TPR=r86400`,
-    userData: { label: 'LIST' }
-}];
+const baseUrl = `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}&geoId=106057199&f_TPR=r86400`;
 
 const proxyConfiguration = await Actor.createProxyConfiguration();
 
@@ -23,10 +20,15 @@ const crawler = new PuppeteerCrawler({
     requestHandler: router,
     launchContext: {
         launchOptions: {
-            args: ['--disable-gpu']
+            args: [
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--no-sandbox'
+            ]
         }
     }
 });
 
-await crawler.run(startUrls);
+await crawler.run([{ url: baseUrl, userData: { label: 'LIST', li_at } }]);
 await Actor.exit();
