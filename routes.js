@@ -14,7 +14,15 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
     });
 
     try {
-        await page.waitForSelector('.scaffold-layout__list', { timeout: 60000 });
+        await page.goto(request.url, {
+            waitUntil: 'networkidle2',
+            timeout: 90000
+        });
+
+        await page.waitForSelector('.scaffold-layout__list', { 
+            timeout: 90000,
+            visible: true 
+        });
 
         const jobs = await page.evaluate(() => {
             const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
@@ -28,13 +36,15 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
         });
 
         for (const job of jobs) {
-            await enqueueLinks({
-                urls: [job.url],
-                userData: { 
-                    label: 'DETAIL',
-                    jobData: job
-                }
-            });
+            if (job.url) {
+                await enqueueLinks({
+                    urls: [job.url],
+                    userData: { 
+                        label: 'DETAIL',
+                        jobData: job
+                    }
+                });
+            }
         }
     } catch (error) {
         log.error(`Failed to process listing: ${error.message}`);
@@ -45,21 +55,32 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
 router.addHandler('DETAIL', async ({ request, page, log }) => {
     log.info('Processing job details');
     
-    await page.waitForSelector('#job-details', { timeout: 30000 });
-    
     try {
+        await page.goto(request.url, {
+            waitUntil: 'networkidle2',
+            timeout: 60000
+        });
+        
+        await page.waitForSelector('#job-details', { 
+            timeout: 60000,
+            visible: true 
+        });
+
         const seeMoreButton = await page.$('.jobs-description__footer-button');
         if (seeMoreButton) await seeMoreButton.click();
+
+        await page.waitForTimeout(1000);
+
+        const details = await page.evaluate(() => ({
+            description: document.querySelector('#job-details')?.innerText.trim() || ''
+        }));
+
+        await Dataset.pushData({
+            ...request.userData.jobData,
+            ...details
+        });
     } catch (e) {
-        log.debug('See more button not found');
+        log.error(`Failed to process job detail: ${e.message}`);
+        throw e;
     }
-
-    const details = await page.evaluate(() => ({
-        description: document.querySelector('#job-details')?.innerText.trim() || ''
-    }));
-
-    await Dataset.pushData({
-        ...request.userData.jobData,
-        ...details
-    });
 });
