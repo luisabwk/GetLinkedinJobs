@@ -14,22 +14,22 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
     });
 
     try {
-        await page.waitForSelector('.jobs-search-results-list', { timeout: 60000 });
+        await page.waitForSelector('.scaffold-layout__list', { timeout: 60000 });
 
         const jobs = await page.evaluate(() => {
             const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
             return jobElements.map(job => ({
-                vaga: job.querySelector('.job-card-list__title--link')?.innerText.trim().replace(/\n/g, ' ') || '',
-                empresa: job.querySelector('.artdeco-entity-lockup__subtitle')?.innerText.trim() || '',
-                local: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().replace(/\(.*?\)/, '').trim() || '',
-                formato: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().match(/\(([^)]+)\)/)?.[1] || '',
-                link: job.querySelector('a')?.href || ''
+                title: job.querySelector('.job-card-list__title--link')?.innerText.trim().replace(/\n/g, ' ') || '',
+                company: job.querySelector('.artdeco-entity-lockup__subtitle')?.innerText.trim() || '',
+                location: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().replace(/\(.*?\)/, '').trim() || '',
+                workType: job.querySelector('.job-card-container__metadata-wrapper')?.innerText.trim().match(/\(([^)]+)\)/)?.[1] || '',
+                url: job.querySelector('a')?.href || ''
             }));
         });
 
         for (const job of jobs) {
             await enqueueLinks({
-                urls: [job.link],
+                urls: [job.url],
                 userData: { 
                     label: 'DETAIL',
                     jobData: job
@@ -55,9 +55,6 @@ router.addHandler('DETAIL', async ({ request, page, log }) => {
     }
 
     const details = await page.evaluate(() => ({
-        title: document.querySelector('.job-details-jobs-unified-top-card__job-title')?.innerText.trim() || '',
-        company: document.querySelector('.job-details-jobs-unified-top-card__company-name')?.innerText.trim() || '',
-        location: document.querySelector('.job-details-jobs-unified-top-card__primary-description-container')?.innerText.trim().split(' ·')[0].trim() || '',
         description: document.querySelector('#job-details')?.innerText.trim() || ''
     }));
 
