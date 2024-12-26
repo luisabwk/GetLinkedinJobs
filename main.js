@@ -26,7 +26,7 @@ const proxyConfiguration = await Actor.createProxyConfiguration({
 
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
-    requestHandler: async (context) => router(context, input), // Encaminha o input ao router
+    requestHandler: async (context) => router(context, input), // Passa o input diretamente ao router
     launchContext: {
         launchOptions: {
             args: ['--disable-gpu'],
