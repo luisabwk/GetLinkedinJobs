@@ -3,33 +3,35 @@ import { Dataset, createPuppeteerRouter } from 'crawlee';
 
 export const router = createPuppeteerRouter();
 
-const RATE_LIMIT_DELAY = 30000;
-
 router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
     log.info('Processing job listings page');
+    const { maxJobs } = request.userData;
     
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
     
     await page.setCookie({
-        name: 'li_at', 
+        name: 'li_at',
         value: request.userData.li_at,
-        domain: '.linkedin.com'
+        domain: '.linkedin.com',
+        secure: true,
+        httpOnly: true
     });
 
-    try {
-        await page.goto(request.url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 90000
-        });
-
-        if (page.url().includes('checkpoint/challenge')) {
-            throw new Error('LinkedIn security check triggered');
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+        const resourceType = req.resourceType();
+        if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
+            req.abort();
+        } else {
+            req.continue();
         }
+    });
 
-        await page.waitForSelector('.scaffold-layout__list', { 
-            timeout: 90000,
-            visible: true 
-        });
+    await new Promise(r => setTimeout(r, 2000));
+
+    try {
+        await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
+        await new Promise(r => setTimeout(r, 1000));
 
         const jobs = await page.evaluate(() => {
             const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
@@ -42,7 +44,12 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
             }));
         });
 
-        log.info(`Found ${jobs.length} jobs`);
+        const dataset = await Dataset.open();
+        const datasetSize = await dataset.getInfo().then(info => info?.itemCount || 0);
+
+        if (datasetSize >= maxJobs) {
+            return;
+        }
 
         for (const job of jobs) {
             if (job.url) {
@@ -57,12 +64,21 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
             }
         }
 
-        await page.waitForTimeout(5000);
-    } catch (error) {
-        if (error.message.includes('429')) {
-            log.warning('Rate limit detected, waiting before retry');
-            await page.waitForTimeout(RATE_LIMIT_DELAY);
+        const nextPage = await page.$('button[aria-label="Next"]');
+        if (nextPage) {
+            const currentJobCount = await Dataset.getData().then(data => data?.items?.length || 0);
+            if (currentJobCount < maxJobs) {
+                const nextUrl = request.url.replace(/&start=\d+/, '') + `&start=${currentJobCount}`;
+                await enqueueLinks({
+                    urls: [nextUrl],
+                    userData: request.userData
+                });
+            }
         }
+
+    } catch (error) {
+        log.error(`Failed to process listing: ${error.message}`);
+        await new Promise(r => setTimeout(r, 10000));
         throw error;
     }
 });
@@ -70,29 +86,28 @@ router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
 router.addHandler('DETAIL', async ({ request, page, log }) => {
     log.info(`Processing job details: ${request.url}`);
     
+    await page.setCookie({
+        name: 'li_at',
+        value: request.userData.li_at,
+        domain: '.linkedin.com',
+        secure: true,
+        httpOnly: true
+    });
+
     try {
-        await page.setCookie({
-            name: 'li_at', 
-            value: request.userData.li_at,
-            domain: '.linkedin.com'
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            const resourceType = req.resourceType();
+            if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
+                req.abort();
+            } else {
+                req.continue();
+            }
         });
 
-        await page.goto(request.url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-        });
+        await page.goto(request.url, { waitUntil: 'networkidle2' });
+        await page.waitForSelector('#job-details', { timeout: 30000 });
         
-        await page.waitForSelector('#job-details', { 
-            timeout: 60000,
-            visible: true 
-        });
-
-        const seeMoreButton = await page.$('.jobs-description__footer-button');
-        if (seeMoreButton) {
-            await seeMoreButton.click();
-            await page.waitForTimeout(1000);
-        }
-
         const details = await page.evaluate(() => ({
             description: document.querySelector('#job-details')?.innerText.trim() || ''
         }));
@@ -103,12 +118,10 @@ router.addHandler('DETAIL', async ({ request, page, log }) => {
             scrapedAt: new Date().toISOString()
         });
 
-        await page.waitForTimeout(5000);
-    } catch (e) {
-        if (e.message.includes('429')) {
-            log.warning('Rate limit detected, waiting before retry');
-            await page.waitForTimeout(RATE_LIMIT_DELAY);
-        }
-        throw e;
+        await new Promise(r => setTimeout(r, 2000));
+    } catch (error) {
+        log.error(`Failed to process job detail: ${error.message}`);
+        await new Promise(r => setTimeout(r, 10000));
+        throw error;
     }
 });
