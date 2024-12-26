@@ -1,42 +1,30 @@
-// routes.js
 import { Dataset, createPuppeteerRouter } from 'crawlee';
+import { getJobDetails } from './job-details.js';
+import { extractJobListings } from './scrape-jobs.js';
 
-const router = createPuppeteerRouter();
+export const router = createPuppeteerRouter();
 
-// Handler for scraping job listings
-router.addHandler('jobListing', async ({ request, page, log, enqueueLinks }, input) => {
-    log.info(`Scraping job listings: ${request.loadedUrl}`);
-
-    const li_at = input?.li_at;
-    log.info(`Cookie li_at received: ${li_at ? 'YES' : 'NO'}`);
-
-    if (!li_at) {
-        throw new Error('Cookie "li_at" is missing from the input.');
+router.addHandler('LIST', async ({ request, page, log, crawler }) => {
+    log.info('Processing job listings page');
+    const input = await crawler.getInput();
+    const jobs = await extractJobListings(page, input.maxJobs);
+    
+    for (const job of jobs.vagas) {
+        await crawler.addRequests([{
+            url: job.link,
+            userData: { 
+                label: 'DETAIL',
+                baseJob: job
+            }
+        }]);
     }
-
-    await page.setCookie({
-        name: 'li_at',
-        value: li_at,
-        domain: '.linkedin.com',
-    });
-
-    await page.goto(request.loadedUrl, { waitUntil: 'domcontentloaded' });
-
-    const jobs = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll('.job-card-container--clickable')).map(job => ({
-            title: job.querySelector('.job-card-list__title')?.innerText.trim() || '',
-            company: job.querySelector('.job-card-container__company-name')?.innerText.trim() || '',
-            location: job.querySelector('.job-card-container__metadata-item')?.innerText.trim() || '',
-            link: job.querySelector('a')?.href || '',
-        }));
-    });
-
-    await Dataset.pushData(jobs);
-    log.info(`Scraped ${jobs.length} jobs.`);
-    const jobLinks = jobs.map(job => ({ url: job.link, label: 'jobDetail' }));
-    await enqueueLinks({ requests: jobLinks });
-
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // 5-second delay
 });
 
-export default router;
+router.addHandler('DETAIL', async ({ request, page, log }) => {
+    log.info('Processing job detail');
+    const jobDetails = await getJobDetails(page);
+    await Dataset.pushData({
+        ...request.userData.baseJob,
+        ...jobDetails
+    });
+});
