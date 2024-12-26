@@ -4,10 +4,10 @@ import { Dataset, createPuppeteerRouter } from 'crawlee';
 const router = createPuppeteerRouter();
 
 // Handler for scraping job listings
-router.addHandler('jobListing', async ({ request, page, log, enqueueLinks, crawlerInput }) => {
+router.addHandler('jobListing', async ({ request, page, log, enqueueLinks }, input) => {
     log.info(`Scraping job listings: ${request.loadedUrl}`);
 
-    const li_at = crawlerInput.li_at;
+    const li_at = input?.li_at;
     log.info(`Cookie li_at received: ${li_at ? 'YES' : 'NO'}`);
 
     if (!li_at) {
