@@ -19,18 +19,14 @@ const proxyConfiguration = await Actor.createProxyConfiguration();
 const crawler = new PuppeteerCrawler({
     proxyConfiguration,
     requestHandler: router,
-    maxRequestRetries: 5,
-    requestHandlerTimeoutSecs: 120,
-    navigationTimeoutSecs: 120,
+    maxRequestRetries: 3,
+    maxConcurrency: 1,
+    requestHandlerTimeoutSecs: 180,
+    navigationTimeoutSecs: 180,
     maxRequestsPerCrawl: maxJobs * 2,
-    preNavigationHooks: [
-        async ({ page, request }) => {
-            await page.setExtraHTTPHeaders({
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
-            });
-        }
-    ]
+    browserPoolOptions: {
+        maxOpenPagesPerBrowser: 1
+    }
 });
 
 await crawler.run([{ url: baseUrl, userData: { label: 'LIST', li_at } }]);
