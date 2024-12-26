@@ -19,13 +19,13 @@ const proxyConfiguration = await Actor.createProxyConfiguration({
 const crawler = new PuppeteerCrawler({
    proxyConfiguration,
    requestHandler: router,
-   maxConcurrency: 1,
-   maxRequestRetries: 3,
+   maxConcurrency: 2,
+   maxRequestRetries: 2,
    maxRequestsPerCrawl: maxJobs * 2,
-   requestHandlerTimeoutSecs: 180,
-   navigationTimeoutSecs: 180,
+   requestHandlerTimeoutSecs: 30,
+   navigationTimeoutSecs: 30,
    browserPoolOptions: {
-       maxOpenPagesPerBrowser: 1,
+       maxOpenPagesPerBrowser: 2,
        useFingerprints: true
    }
 });
