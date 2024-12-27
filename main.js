@@ -1,43 +1,169 @@
 // main.js
 import { Actor } from 'apify';
-import { PuppeteerCrawler } from 'crawlee'; 
-import { router } from './routes.js';
+import { Router } from './routes.js';
 
 await Actor.init();
 
-const input = await Actor.getInput();
-const { searchTerm, location, li_at, maxJobs = 25 } = input;
+const {
+    searchTerm,
+    location,
+    li_at,
+    maxJobs = 25,
+    maxConcurrency = 5,
+    timeout = 30000,
+} = await Actor.getInput();
 
-if (!searchTerm || !location || !li_at) {
-   throw new Error('searchTerm, location and li_at are required');
-}
-
-const proxyConfiguration = await Actor.createProxyConfiguration({
-   groups: ['RESIDENTIAL'] 
+const crawler = await Actor.createPlaywrightCrawler({
+    requestHandler: Router,
+    maxConcurrency: 1, // Reduzido para evitar 429
+    navigationTimeoutSecs: 60, // Aumentado para 60s
+    maxRequestRetries: 5,
+    requestHandlerTimeoutSecs: 180, // 3 min total
+    browserPoolOptions: {
+        useFingerprints: true, // Adiciona fingerprints
+        fingerprintOptions: {
+            screen: { width: 1920, height: 1080 }
+        }
+    },
+    preNavigationHooks: [
+        async ({ page }) => {
+            await page.setExtraHTTPHeaders({
+                'Cookie': `li_at=${li_at}`
+            });
+        }
+    ],
+    requestHandlerTimeoutSecs: timeout / 1000,
 });
 
-const crawler = new PuppeteerCrawler({
-   proxyConfiguration,
-   requestHandler: router,
-   maxConcurrency: 2,
-   maxRequestRetries: 2,
-   maxRequestsPerCrawl: maxJobs * 2,
-   requestHandlerTimeoutSecs: 30,
-   navigationTimeoutSecs: 30,
-   browserPoolOptions: {
-       maxOpenPagesPerBrowser: 2,
-       useFingerprints: true
-   }
-});
-
-await crawler.run([{ 
-   url: `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}&geoId=106057199&f_TPR=r86400&start=0&position=1`,
-   userData: { 
-       label: 'LIST',
-       li_at,
-       maxJobs,
-       retryCount: 0
-   }
+await crawler.run([{
+    url: `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`,
+    userData: { maxJobs }
 }]);
 
 await Actor.exit();
+
+// routes.js
+export const Router = async ({ request, page, log }) => {
+    const { maxJobs } = request.userData;
+    const results = [];
+    
+    try {
+        await page.waitForSelector('.scaffold-layout__list', { timeout: 10000 });
+        
+        while (results.length < maxJobs) {
+            const jobs = await page.$$('.jobs-search-results__list-item');
+            
+            for (const job of jobs) {
+                if (results.length >= maxJobs) break;
+                
+                await job.click();
+                await page.waitForSelector('#job-details', { timeout: 5000 });
+                
+                const details = await extractJobDetails(page);
+                results.push(details);
+                
+                await Actor.pushData(details);
+            }
+            
+            if (results.length < maxJobs) {
+                const hasNextPage = await goToNextPage(page);
+                if (!hasNextPage) break;
+            }
+        }
+    } catch (error) {
+        log.error('Scraping failed:', error);
+        throw error;
+    }
+};
+
+async function extractJobDetails(page) {
+    const title = await page.$eval('h1', el => el.textContent.trim());
+    const company = await page.$eval('.jobs-unified-top-card__company-name', el => el.textContent.trim());
+    const description = await page.$eval('#job-details', el => el.textContent.trim());
+    
+    let applyUrl = '';
+    try {
+        const applyButton = await page.$('.jobs-apply-button--top-card');
+        if (applyButton) {
+            await applyButton.click();
+            await page.waitForSelector('.jobs-apply-button', { timeout: 3000 });
+            applyUrl = await page.evaluate(() => {
+                const link = document.querySelector('.jobs-apply-button');
+                return link ? link.href : '';
+            });
+        }
+    } catch (e) {
+        // Application url not available
+    }
+    
+    return {
+        title,
+        company,
+        description,
+        applyUrl,
+        url: page.url()
+    };
+}
+
+async function goToNextPage(page) {
+    const nextButton = await page.$('button[aria-label="Next"]');
+    if (!nextButton) return false;
+    
+    await nextButton.click();
+    await page.waitForSelector('.scaffold-layout__list');
+    await page.waitForTimeout(1000); // Rate limiting protection
+    
+    return true;
+}
+
+// INPUT_SCHEMA.json
+{
+    "title": "LinkedIn Jobs Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "searchTerm": {
+            "title": "Search Term",
+            "type": "string",
+            "description": "Job search keyword",
+            "editor": "textfield"
+        },
+        "location": {
+            "title": "Location",
+            "type": "string",
+            "description": "Job location",
+            "editor": "textfield"
+        },
+        "li_at": {
+            "title": "LinkedIn Cookie",
+            "type": "string",
+            "description": "LinkedIn authentication cookie value",
+            "editor": "textfield"
+        },
+        "maxJobs": {
+            "title": "Maximum Jobs",
+            "type": "integer",
+            "description": "Maximum number of jobs to scrape",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+        },
+        "maxConcurrency": {
+            "title": "Max Concurrency",
+            "type": "integer",
+            "description": "Maximum concurrent requests",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 10
+        },
+        "timeout": {
+            "title": "Timeout",
+            "type": "integer",
+            "description": "Request timeout in milliseconds",
+            "default": 30000,
+            "minimum": 10000,
+            "maximum": 60000
+        }
+    },
+    "required": ["searchTerm", "location", "li_at"]
+}
