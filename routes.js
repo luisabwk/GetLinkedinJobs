@@ -33,7 +33,15 @@ export async function getJobListings(page, url, maxJobs, li_at) {
         const pageUrl = currentPage === 1 ? url : `${url}&start=${(currentPage - 1) * 25}`;
         console.log(`[INFO] Processing page ${currentPage}`);
 
-        await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        try {
+            console.log(`[INFO] Navigating to URL: ${pageUrl}`);
+            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            console.log('[INFO] Page loaded successfully.');
+        } catch (error) {
+            console.error('[ERROR] Failed to load page:', error.message);
+            break; // Interromper se a navegação falhar
+        }
+
         await sleep(3000);
 
         await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
@@ -43,13 +51,28 @@ export async function getJobListings(page, url, maxJobs, li_at) {
         for (const job of jobs) {
             if (results.length >= maxJobs) break;
 
-            await job.click();
-            await sleep(2000);
+            try {
+                console.log('[INFO] Clicking on job...');
+                await Promise.race([
+                    job.click(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Click timeout')), 5000))
+                ]);
+                await sleep(2000);
+            } catch (error) {
+                console.warn(`[WARN] Failed to click on job: ${error.message}`);
+                continue;
+            }
 
-            const details = await extractJobDetails(page, browser);
-            results.push(details);
-            await Actor.pushData(details);
-            console.log(`[INFO] Processed job: ${details.title}`);
+            try {
+                const details = await extractJobDetails(page, browser);
+                results.push(details);
+                console.log('[INFO] Saving job data...');
+                await Actor.pushData(details);
+                console.log('[INFO] Job data saved.');
+                console.log(`[INFO] Processed job: ${details.title}`);
+            } catch (error) {
+                console.error('[ERROR] Failed to process job:', error.message);
+            }
         }
 
         const nextButton = await page.$('button[aria-label="Next"]');
@@ -60,8 +83,15 @@ export async function getJobListings(page, url, maxJobs, li_at) {
             break;
         }
 
-        await nextButton.click();
-        await sleep(2000);
+        try {
+            console.log('[INFO] Navigating to next page...');
+            await nextButton.click();
+            await sleep(2000);
+        } catch (error) {
+            console.warn('[WARN] Failed to navigate to next page:', error.message);
+            break;
+        }
+
         currentPage++;
     }
 
@@ -69,6 +99,7 @@ export async function getJobListings(page, url, maxJobs, li_at) {
 }
 
 async function extractJobDetails(page, browser) {
+    console.log('[INFO] Extracting job details...');
     const details = await page.evaluate(() => {
         const locationEl = document.querySelector('.job-details-jobs-unified-top-card__primary-description-container');
         let location = '';
@@ -134,5 +165,6 @@ async function extractJobDetails(page, browser) {
         details.applyUrl = details.link;
     }
 
+    console.log('[INFO] Job details extracted:', details);
     return details;
 }
