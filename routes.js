@@ -31,10 +31,15 @@ export async function getJobListings(browser, searchTerm, location, li_at, maxJo
             // Wait for job list container
             await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
 
+            // Debug DOM content to verify structure
+            const contentHtml = await page.content();
+            console.log("[DEBUG] Page HTML snapshot captured.");
+
             // Extract job links
-            const jobLinks = await page.$$eval('.job-card-container--clickable a', anchors =>
-                anchors.map(anchor => anchor.href).filter(href => href.includes('/jobs/view/'))
-            );
+            const jobLinks = await page.evaluate(() => {
+                const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
+                return jobElements.map(el => el.querySelector('a')?.href).filter(href => href && href.includes('/jobs/view/'));
+            });
 
             console.log(`[INFO] Found ${jobLinks.length} job links on page ${currentPage}`);
             jobLinks.forEach(link => {
