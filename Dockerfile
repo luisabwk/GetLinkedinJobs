@@ -1,7 +1,9 @@
 FROM apify/actor-node-puppeteer-chrome:latest
 
-COPY . ./
+COPY package*.json ./
 
-RUN npm install --force --quiet --only=prod --no-optional && (npm list || true)
+RUN npm install --quiet --only=prod
+
+COPY . ./
 
 CMD ["npm", "start"]
