@@ -19,8 +19,7 @@ export async function getJobListings(page, url, maxJobs, li_at) {
     await page.setRequestInterception(true);
     page.on('request', (req) => {
         const resourceType = req.resourceType();
-        if (resourceType === 'image' || resourceType === 'media' || 
-            resourceType === 'font' || resourceType === 'stylesheet') {
+        if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
             req.abort();
         } else {
             req.continue();
@@ -29,21 +28,18 @@ export async function getJobListings(page, url, maxJobs, li_at) {
 
     const results = [];
     let currentPage = 1;
-    
+
     while (results.length < maxJobs) {
         const pageUrl = currentPage === 1 ? url : `${url}&start=${(currentPage - 1) * 25}`;
         console.log(`[INFO] Processing page ${currentPage}`);
 
-        // Navigate to page
         await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await sleep(3000);
 
-        // Wait for job list
         await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
         const jobs = await page.$$('.job-card-container--clickable');
         console.log(`[INFO] Found ${jobs.length} jobs`);
 
-        // Process jobs
         for (const job of jobs) {
             if (results.length >= maxJobs) break;
 
@@ -56,15 +52,14 @@ export async function getJobListings(page, url, maxJobs, li_at) {
             console.log(`[INFO] Processed job: ${details.title}`);
         }
 
-        // Check for next page
         const nextButton = await page.$('button[aria-label="Next"]');
         const isDisabled = await page.evaluate(btn => btn?.disabled, nextButton);
-        
+
         if (!nextButton || isDisabled) {
             console.log('[INFO] No more pages');
             break;
         }
-        
+
         await nextButton.click();
         await sleep(2000);
         currentPage++;
@@ -91,10 +86,12 @@ async function extractJobDetails(page, browser) {
         }
 
         const link = window.location.href;
+        const viewUrl = `https://www.linkedin.com/jobs/view/${link.match(/view\/(\d+)/)?.[1] || ''}`;
+
         return {
             title: document.querySelector('h1')?.innerText.trim() || '',
             company: document.querySelector('.job-details-jobs-unified-top-card__company-name')?.innerText.trim() || '',
-            link: link.split('?')[0], // Remove query parameters
+            link: viewUrl,
             location,
             format,
             description: document.querySelector('#job-details')?.innerText.trim() || ''
@@ -105,14 +102,14 @@ async function extractJobDetails(page, browser) {
         const applyButton = await page.$('.jobs-apply-button--top-card');
         if (applyButton) {
             const buttonText = await page.evaluate(btn => btn.textContent.trim(), applyButton);
-            
+
             if (buttonText.includes('Candidatura simplificada')) {
                 details.applyUrl = details.link;
             } else if (buttonText.includes('Candidatar-se')) {
                 await applyButton.click();
                 await sleep(2000);
 
-                const newPagePromise = new Promise(resolve => 
+                const newPagePromise = new Promise(resolve =>
                     browser.once('targetcreated', target => resolve(target.page()))
                 );
                 const newPage = await newPagePromise;
