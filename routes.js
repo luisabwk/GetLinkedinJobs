@@ -1,4 +1,4 @@
-async function getJobDetails(page, jobUrl) {
+export async function getJobListings(page, jobUrl) {
     await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
 
