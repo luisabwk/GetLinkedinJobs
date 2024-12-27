@@ -1,10 +1,11 @@
-// routes.js
+import { Actor } from 'apify';
 export const Router = async ({ request, page, log }) => {
     const { maxJobs } = request.userData;
     const results = [];
     
     try {
-        await page.waitForSelector('.scaffold-layout__list', { timeout: 10000 });
+        await page.waitForTimeout(3000);
+        await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
         
         while (results.length < maxJobs) {
             const jobs = await page.$$('.jobs-search-results__list-item');
@@ -67,7 +68,7 @@ async function goToNextPage(page) {
     
     await nextButton.click();
     await page.waitForSelector('.scaffold-layout__list');
-    await page.waitForTimeout(1000); // Rate limiting protection
+    await page.waitForTimeout(1000);
     
     return true;
 }
