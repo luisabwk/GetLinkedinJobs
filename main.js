@@ -1,6 +1,7 @@
 // main.js
 import { Actor } from 'apify';
-import { PuppeteerCrawler } from 'crawlee';
+import puppeteer from 'puppeteer';
+import { Router } from './routes.js';
 
 await Actor.init();
 
@@ -12,24 +13,26 @@ const {
     timeout = 60000,
 } = await Actor.getInput();
 
-const crawler = new PuppeteerCrawler({
-    requestHandler: Router,
-    maxConcurrency: 1,
-    navigationTimeoutSecs: 60,
-    maxRequestRetries: 5,
-    requestHandlerTimeoutSecs: 180,
-    preNavigationHooks: [
-        async ({ page }) => {
-            await page.setExtraHTTPHeaders({
-                'Cookie': `li_at=${li_at}`
-            });
-        }
-    ],
+const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox']
 });
 
-await crawler.run([{
-    url: `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`,
-    userData: { maxJobs }
-}]);
+const page = await browser.newPage();
 
-await Actor.exit();
+await page.setExtraHTTPHeaders({
+    'Cookie': `li_at=${li_at}`
+});
+
+try {
+    await Router({ 
+        url: `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`,
+        page,
+        maxJobs
+    });
+} catch (error) {
+    console.error('Error:', error);
+} finally {
+    await browser.close();
+    await Actor.exit();
+}
