@@ -110,17 +110,27 @@ async function extractJobDetails(page, browser) {
                 await sleep(2000);
 
                 const newPagePromise = new Promise(resolve =>
-                    browser.once('targetcreated', target => resolve(target.page()))
+                    browser.once('targetcreated', async target => {
+                        const newPage = await target.page();
+                        if (newPage) resolve(newPage);
+                    })
                 );
+
                 const newPage = await newPagePromise;
-                details.applyUrl = await newPage.url();
-                await newPage.close();
+
+                if (newPage) {
+                    details.applyUrl = await newPage.url();
+                    await newPage.close();
+                } else {
+                    console.warn('[WARN] New tab did not open. Using fallback URL.');
+                    details.applyUrl = details.link;
+                }
             }
         } else {
             details.applyUrl = details.link;
         }
     } catch (e) {
-        console.error('[ERROR] Error getting apply URL:', e);
+        console.error('[ERROR] Error getting apply URL:', e.message);
         details.applyUrl = details.link;
     }
 
