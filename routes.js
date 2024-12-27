@@ -1,4 +1,5 @@
 import { Actor } from 'apify';
+
 export const Router = async ({ request, page, log }) => {
     const { maxJobs } = request.userData;
     const results = [];
