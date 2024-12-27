@@ -2,137 +2,153 @@ import { Actor } from 'apify';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-export async function getJobListings(page, url, maxJobs, li_at) {
-    const browser = page.browser();
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    );
-
-    await page.setCookie({
-        name: 'li_at',
-        value: li_at,
-        domain: '.linkedin.com',
-        path: '/'
-    });
-
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-        const resourceType = req.resourceType();
-        if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
-            req.abort();
-        } else {
-            req.continue();
-        }
-    });
-
-    const results = [];
+export async function getJobListings(browser, searchTerm, location, li_at, maxJobs) {
+    console.log("[INFO] Starting job scraping...");
+    const baseUrl = `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`;
+    const allJobLinks = [];
     let currentPage = 1;
 
-    while (results.length < maxJobs) {
-        const pageUrl = currentPage === 1 ? url : `${url}&start=${(currentPage - 1) * 25}`;
-        console.log(`[INFO] Navigating to URL: ${pageUrl}`);
+    while (allJobLinks.length < maxJobs) {
+        const pageUrl = currentPage === 1 ? baseUrl : `${baseUrl}&start=${(currentPage - 1) * 25}`;
+        console.log(`[INFO] Navigating to page ${currentPage}: ${pageUrl}`);
+
+        let page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        );
+
+        await page.setCookie({
+            name: "li_at",
+            value: li_at,
+            domain: ".linkedin.com",
+        });
 
         try {
-            await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            console.log('[INFO] Page loaded successfully.');
-        } catch (error) {
-            console.error('[ERROR] Failed to load page:', error.message);
-            break;
-        }
+            await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+            console.log("[INFO] Page loaded successfully.");
 
-        await sleep(3000);
-
-        try {
+            // Wait for job list container
             await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
-            const jobs = await page.$$('.job-card-container--clickable');
-            console.log(`[INFO] Found ${jobs.length} jobs`);
 
-            for (const job of jobs) {
-                if (results.length >= maxJobs) break;
+            // Extract job links
+            const jobLinks = await page.$$eval('.job-card-container--clickable a', anchors =>
+                anchors.map(anchor => anchor.href).filter(href => href.includes('/jobs/view/'))
+            );
 
-                try {
-                    await Promise.race([
-                        job.click(),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('Click timeout')), 5000))
-                    ]);
-                    await sleep(2000);
+            console.log(`[INFO] Found ${jobLinks.length} job links on page ${currentPage}`);
+            jobLinks.forEach(link => {
+                if (!allJobLinks.includes(link)) allJobLinks.push(link);
+            });
 
-                    const details = await extractJobDetails(page, browser);
-                    results.push(details);
-
-                    console.log('[INFO] Saving job data...');
-                    await Actor.pushData(details);
-                    console.log(`[INFO] Job processed: ${details.title}`);
-                } catch (error) {
-                    console.warn(`[WARN] Failed to process job: ${error.message}`);
-                }
-            }
-
+            // Check if there are more pages
             const nextButton = await page.$('button[aria-label="Next"]');
             const isDisabled = await page.evaluate(btn => btn?.disabled, nextButton);
 
             if (!nextButton || isDisabled) {
-                console.log('[INFO] No more pages');
+                console.log('[INFO] No more pages.');
                 break;
             }
 
-            await nextButton.click();
-            await sleep(2000);
+            currentPage++;
         } catch (error) {
-            console.warn(`[WARN] Error navigating to next page: ${error.message}`);
+            console.error(`[ERROR] Error on page ${currentPage}: ${error.message}`);
             break;
+        } finally {
+            await page.close();
         }
 
-        currentPage++;
+        if (allJobLinks.length >= maxJobs) {
+            console.log("[INFO] Reached max job limit.");
+            break;
+        }
     }
 
-    return results;
+    console.log(`[INFO] Total job links collected: ${allJobLinks.length}`);
+    const jobs = [];
+
+    // Process each job link for details
+    for (const jobUrl of allJobLinks.slice(0, maxJobs)) {
+        console.log(`[INFO] Fetching details for job: ${jobUrl}`);
+        try {
+            const jobDetails = await extractJobDetails(browser, jobUrl, li_at);
+            jobs.push(jobDetails);
+            console.log(`[INFO] Job processed: ${jobDetails.title}`);
+        } catch (error) {
+            console.error(`[ERROR] Failed to process job: ${error.message}`);
+        }
+    }
+
+    return jobs;
 }
 
-async function extractJobDetails(page, browser) {
-    console.log('[INFO] Extracting job details...');
+async function extractJobDetails(browser, jobUrl, li_at) {
+    console.log(`[INFO] Accessing job details: ${jobUrl}`);
+    let page = null;
+    let jobDetails = {};
+
     try {
-        const details = await page.evaluate(() => {
-            const title = document.querySelector('.job-details-jobs-unified-top-card__job-title')?.innerText.trim() || '';
-            const company = document.querySelector('.job-details-jobs-unified-top-card__company-name')?.innerText.trim() || '';
-            const locationData = document.querySelector('.job-details-jobs-unified-top-card__primary-description-container')?.innerText.trim() || '';
-            const description = document.querySelector('#job-details')?.innerText.trim() || '';
+        page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        );
+
+        await page.setCookie({ name: "li_at", value: li_at, domain: ".linkedin.com" });
+        await page.goto(jobUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+        // Expand full job description
+        const seeMoreSelector = ".jobs-description__footer-button";
+        try {
+            await page.waitForSelector(seeMoreSelector, { timeout: 5000 });
+            await page.click(seeMoreSelector);
+        } catch {
+            console.warn("[WARN] 'See more' button not found.");
+        }
+
+        // Extract job details
+        jobDetails = await page.evaluate(() => {
+            const locationData = document.querySelector(".job-details-jobs-unified-top-card__primary-description-container")?.innerText.trim() || "";
+            let location = "";
+            let format = "";
+
+            if (locationData) {
+                const formatMatch = locationData.match(/\(([^)]+)\)/);
+                format = formatMatch ? formatMatch[1].trim() : "";
+                location = locationData.replace(/\(.*?\)/, "").trim();
+            }
 
             return {
-                title,
-                company,
-                location: locationData.split(' ·')[0].trim() || '',
-                description,
+                title: document.querySelector(".job-details-jobs-unified-top-card__job-title")?.innerText.trim() || "",
+                company: document.querySelector(".job-details-jobs-unified-top-card__company-name")?.innerText.trim() || "",
+                location,
+                format,
+                description: document.querySelector("#job-details")?.innerText.trim() || "",
                 applyUrl: null
             };
         });
 
-        const applyButtonSelector = '.jobs-apply-button--top-card';
-        const applyButton = await page.$(applyButtonSelector);
-
+        // Handle apply URL
+        const applyButton = await page.$(".jobs-apply-button--top-card");
         if (applyButton) {
-            const buttonText = await page.evaluate(button => button.textContent.trim(), applyButton);
-
-            if (buttonText.includes('Candidatura simplificada')) {
-                console.log('[INFO] Simplified application detected.');
-                details.applyUrl = page.url();
-            } else if (buttonText.includes('Candidatar-se')) {
-                console.log('[INFO] Redirect application detected. Clicking apply button...');
+            const buttonText = await page.evaluate(btn => btn.textContent.trim(), applyButton);
+            if (buttonText.includes("Candidatura simplificada")) {
+                jobDetails.applyUrl = jobUrl;
+            } else if (buttonText.includes("Candidatar-se")) {
                 await applyButton.click();
-                await sleep(3000);
-
-                const newTabUrl = await page.evaluate(() => window.__NEW_TAB_URL__);
-                details.applyUrl = newTabUrl || details.link;
+                await sleep(2000);
+                const newPage = await browser.waitForTarget(t => t.url() !== jobUrl);
+                jobDetails.applyUrl = newPage?.url() || jobUrl;
             }
         } else {
-            console.warn('[WARN] Apply button not found.');
-            details.applyUrl = page.url();
+            jobDetails.applyUrl = jobUrl;
         }
 
-        return details;
+        return jobDetails;
     } catch (error) {
-        console.error('[ERROR] Error extracting job details:', error.message);
+        console.error(`[ERROR] Failed to extract job details: ${error.message}`);
         throw error;
+    } finally {
+        if (page) await page.close();
     }
 }
