@@ -1,6 +1,8 @@
 // routes.js
 import { Actor } from 'apify';
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 export const Router = async ({ url, page, maxJobs }) => {
     const results = [];
     
@@ -11,7 +13,7 @@ export const Router = async ({ url, page, maxJobs }) => {
             timeout: 120000 
         });
 
-        await page.waitForTimeout(5000);
+        await sleep(5000);
         await page.waitForSelector('.scaffold-layout__list', { 
             timeout: 60000,
             visible: true
@@ -33,7 +35,7 @@ export const Router = async ({ url, page, maxJobs }) => {
                 results.push(details);
                 
                 await Actor.pushData(details);
-                await page.waitForTimeout(1000);
+                await sleep(1000);
             }
             
             if (results.length < maxJobs) {
@@ -82,7 +84,7 @@ async function goToNextPage(page) {
     
     await nextButton.click();
     await page.waitForSelector('.scaffold-layout__list');
-    await page.waitForTimeout(3000);
+    await sleep(3000);
     
     return true;
 }
