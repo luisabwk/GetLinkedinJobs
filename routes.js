@@ -5,9 +5,17 @@ export const Router = async ({ url, page, maxJobs }) => {
     const results = [];
     
     try {
-        await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
-        await page.waitForTimeout(3000);
-        await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
+        await page.setDefaultNavigationTimeout(120000);
+        await page.goto(url, { 
+            waitUntil: 'networkidle0',
+            timeout: 120000 
+        });
+
+        await page.waitForTimeout(5000);
+        await page.waitForSelector('.scaffold-layout__list', { 
+            timeout: 60000,
+            visible: true
+        });
         
         while (results.length < maxJobs) {
             const jobs = await page.$$('.jobs-search-results__list-item');
@@ -16,12 +24,16 @@ export const Router = async ({ url, page, maxJobs }) => {
                 if (results.length >= maxJobs) break;
                 
                 await job.click();
-                await page.waitForSelector('#job-details', { timeout: 5000 });
+                await page.waitForSelector('#job-details', { 
+                    timeout: 10000,
+                    visible: true 
+                });
                 
                 const details = await extractJobDetails(page);
                 results.push(details);
                 
                 await Actor.pushData(details);
+                await page.waitForTimeout(1000);
             }
             
             if (results.length < maxJobs) {
@@ -45,7 +57,7 @@ async function extractJobDetails(page) {
         const applyButton = await page.$('.jobs-apply-button--top-card');
         if (applyButton) {
             await applyButton.click();
-            await page.waitForSelector('.jobs-apply-button', { timeout: 3000 });
+            await page.waitForSelector('.jobs-apply-button', { timeout: 5000 });
             applyUrl = await page.evaluate(() => {
                 const link = document.querySelector('.jobs-apply-button');
                 return link ? link.href : '';
@@ -70,7 +82,7 @@ async function goToNextPage(page) {
     
     await nextButton.click();
     await page.waitForSelector('.scaffold-layout__list');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(3000);
     
     return true;
 }
