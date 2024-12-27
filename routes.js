@@ -3,121 +3,112 @@ import { Actor } from 'apify';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function authenticate(page, li_at) {
-    await page.setCookie({
-        name: 'li_at',
-        value: li_at,
-        domain: '.linkedin.com',
-        path: '/'
+async function prepareRequestInterception(page) {
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+        const resourceType = req.resourceType();
+        if (resourceType === 'image' || resourceType === 'media' || 
+            resourceType === 'font' || resourceType === 'stylesheet') {
+            req.abort();
+        } else {
+            req.continue();
+        }
     });
 }
 
-export const Router = async ({ url, page, maxJobs, li_at }) => {
+export async function getJobListings({ browser, searchTerm, location, li_at, maxJobs }) {
+    const baseUrl = `https://www.linkedin.com/jobs/search?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}&geoId=106057199&f_TPR=r86400`;
     const results = [];
-    let retries = 0;
-    const maxRetries = 3;
-    
-    while (retries < maxRetries) {
-        try {
-            await page.setDefaultNavigationTimeout(120000);
-            await authenticate(page, li_at);
-            
-            await page.goto(url, { 
-                waitUntil: 'networkidle0',
-                timeout: 120000 
-            });
-            
-            await sleep(5000);
-            
-            const jobListExists = await page.evaluate(() => {
-                return !!document.querySelector('.jobs-search-results-list');
-            });
-            
-            if (!jobListExists) {
-                console.log('Job list not found, retrying...');
-                await sleep(5000);
-                retries++;
-                continue;
-            }
-            
-            while (results.length < maxJobs) {
-                const jobs = await page.$$('.jobs-search-results__list-item');
-                if (!jobs.length) break;
-                
-                for (const job of jobs) {
-                    if (results.length >= maxJobs) break;
-                    
-                    await job.click();
-                    await sleep(2000);
-                    
-                    const details = await extractJobDetails(page);
-                    results.push(details);
-                    await Actor.pushData(details);
-                }
-                
-                if (results.length < maxJobs) {
-                    const hasNextPage = await goToNextPage(page);
-                    if (!hasNextPage) break;
-                }
-            }
-            
-            break;
-            
-        } catch (error) {
-            console.error(`Attempt ${retries + 1} failed:`, error);
-            if (retries >= maxRetries - 1) throw error;
-            retries++;
-            await sleep(10000 * retries);
-        }
-    }
-};
+    let page = null;
 
-async function extractJobDetails(page) {
     try {
-        const title = await page.$eval('h1', el => el.textContent.trim());
-        const company = await page.$eval('.jobs-unified-top-card__company-name', 
-            el => el.textContent.trim());
-        const description = await page.$eval('#job-details', 
-            el => el.textContent.trim());
+        page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
+        await page.setCookie({
+            name: 'li_at',
+            value: li_at,
+            domain: '.linkedin.com'
+        });
+
+        await prepareRequestInterception(page);
         
-        let applyUrl = '';
-        try {
-            const applyButton = await page.$('.jobs-apply-button--top-card');
-            if (applyButton) {
-                await applyButton.click();
-                await page.waitForSelector('.jobs-apply-button', { timeout: 5000 });
-                applyUrl = await page.evaluate(() => {
-                    const link = document.querySelector('.jobs-apply-button');
-                    return link ? link.href : '';
-                });
+        let currentPage = 0;
+        
+        while (results.length < maxJobs) {
+            const pageUrl = currentPage === 0 ? baseUrl : `${baseUrl}&start=${currentPage * 25}`;
+            
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                    await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
+                    break;
+                } catch (error) {
+                    if (attempt === 2) throw error;
+                    await sleep(5000);
+                }
             }
-        } catch (e) {}
-        
-        return {
-            title,
-            company,
-            description,
-            applyUrl,
-            url: page.url()
-        };
-    } catch (e) {
-        console.error('Error extracting details:', e);
-        return {
-            title: '',
-            company: '',
-            description: '',
-            applyUrl: '',
-            url: page.url()
-        };
+            
+            const pageJobs = await page.evaluate(() => {
+                return Array.from(document.querySelectorAll('.job-card-container--clickable'))
+                    .map(job => {
+                        const title = job.querySelector('.job-card-list__title--link')?.innerText.trim();
+                        const company = job.querySelector('.artdeco-entity-lockup__subtitle')?.innerText.trim();
+                        const locationEl = job.querySelector('.job-card-container__metadata-wrapper');
+                        const location = locationEl?.innerText.trim();
+                        const link = job.querySelector('a')?.href;
+                        
+                        return { title, company, location, link };
+                    });
+            });
+            
+            for (const job of pageJobs) {
+                if (results.length >= maxJobs) break;
+                if (job.link) {
+                    const jobDetails = await getJobDetails(page, job.link);
+                    results.push({
+                        ...job,
+                        ...jobDetails
+                    });
+                    await Actor.pushData(results[results.length - 1]);
+                }
+            }
+            
+            const hasNext = await page.evaluate(() => {
+                const button = document.querySelector('button[aria-label="Next"]');
+                return button && !button.disabled;
+            });
+            
+            if (!hasNext) break;
+            currentPage++;
+            await sleep(2000);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        throw error;
+    } finally {
+        if (page) await page.close();
     }
 }
 
-async function goToNextPage(page) {
-    const nextButton = await page.$('button[aria-label="Next"]');
-    if (!nextButton) return false;
-    
-    await nextButton.click();
-    await sleep(3000);
-    
-    return true;
+async function getJobDetails(page, jobUrl) {
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await sleep(2000);
+
+    try {
+        const seeMoreButton = await page.$('.jobs-description__footer-button');
+        if (seeMoreButton) await seeMoreButton.click();
+    } catch (e) {}
+
+    return page.evaluate(() => {
+        const description = document.querySelector('#job-details')?.innerText.trim() || '';
+        const applyButton = document.querySelector('.jobs-apply-button--top-card');
+        const format = document.querySelector('.job-details-jobs-unified-top-card__workplace-type')?.innerText.trim() || '';
+        
+        return {
+            description,
+            format,
+            hasApplyButton: !!applyButton
+        };
+    });
 }
