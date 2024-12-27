@@ -1,204 +1,125 @@
 // routes.js
-import { Dataset, createPuppeteerRouter } from 'crawlee';
-
-export const router = createPuppeteerRouter();
-
-router.addHandler('LIST', async ({ request, page, log, enqueueLinks }) => {
-    log.info('Processing job listings page');
-
-    await page.setBypassCSP(true);
-    await page.setExtraHTTPHeaders({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.linkedin.com/'
-    });
-
-    await page.setCookie({
-        name: 'li_at',
-        value: request.userData.li_at,
-        domain: '.linkedin.com',
-        secure: true,
-        httpOnly: true
-    });
-
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-        const resourceType = req.resourceType();
-        if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font' || resourceType === 'stylesheet') {
-            req.abort();
-        } else {
-            req.continue();
-        }
-    });
-
-    try {
-        const response = await page.goto(request.url, {
-            waitUntil: "domcontentloaded",
-            timeout: 30000
-        });
-
-        if (response.status() === 429) {
-            log.warning('Rate limit hit, waiting 15s...');
-            await new Promise(r => setTimeout(r, 15000));
-            throw new Error('Rate limited');
-        }
-
-        await page.waitForSelector('.scaffold-layout__list', {
-            timeout: 20000,
-            visible: true
-        });
-
-        let totalPages = 1;
-        try {
-            await page.waitForSelector(".artdeco-pagination__pages.artdeco-pagination__pages--number", { timeout: 10000 });
-            totalPages = await page.$$eval(
-                ".artdeco-pagination__pages.artdeco-pagination__pages--number li button",
-                (buttons) => Math.max(...buttons.map((el) => parseInt(el.innerText.trim())).filter(n => !isNaN(n)))
-            );
-            log.info(`Total pages: ${totalPages}`);
-        } catch (error) {
-            log.warning("Could not get total pages, continuing with one page");
-        }
-
-        let allJobs = [];
-        for (let currentPage = 1; currentPage <= totalPages; currentPage++) {
-            if (currentPage > 1) {
-                const pageURL = request.url.replace(/&start=\d+/, '') + `&start=${(currentPage - 1) * 25}`;
-                await page.goto(pageURL, { waitUntil: "domcontentloaded", timeout: 20000 });
-                await page.waitForSelector('.scaffold-layout__list', { timeout: 20000 });
-            }
-
-            const jobs = await page.evaluate(() => {
-                return Array.from(document.querySelectorAll(".job-card-container--clickable"))
-                    .map((job) => ({
-                        title: job.querySelector(".job-card-list__title--link")?.innerText.trim().replace(/\n/g, " ") || '',
-                        company: job.querySelector(".artdeco-entity-lockup__subtitle")?.innerText.trim() || '',
-                        location: job.querySelector(".job-card-container__metadata-wrapper")?.innerText.trim().replace(/\(.*?\)/, "").trim() || '',
-                        workType: job.querySelector(".job-card-container__metadata-wrapper")?.innerText.trim().match(/\(([^)]+)\)/)?.[1] || '',
-                        url: job.querySelector("a")?.href || ''
-                    }))
-                    .filter(job => job.url);
-            });
-
-            allJobs = allJobs.concat(jobs);
-            log.info(`Found ${jobs.length} jobs on page ${currentPage}`);
-
-            if (allJobs.length >= request.userData.maxJobs) {
-                allJobs = allJobs.slice(0, request.userData.maxJobs);
-                break;
-            }
-
-            if (currentPage < totalPages) {
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        }
-
-        for (const job of allJobs) {
-            await enqueueLinks({
-                urls: [job.url],
-                userData: { 
-                    label: 'DETAIL',
-                    jobData: job,
-                    li_at: request.userData.li_at
-                }
-            });
-        }
-
-    } catch (error) {
-        log.error(`Failed to process listing: ${error.message}`);
-        throw error;
-    }
-});
-
-router.addHandler('DETAIL', async ({ request, page, log }) => {
-    log.info(`Processing job details: ${request.url}`);
-
-    await page.setBypassCSP(true);
-    await page.setExtraHTTPHeaders({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.linkedin.com/'
-    });
+export const Router = async ({ request, page, log }) => {
+    const { maxJobs } = request.userData;
+    const results = [];
     
-    await page.setCookie({
-        name: 'li_at',
-        value: request.userData.li_at,
-        domain: '.linkedin.com',
-        secure: true,
-        httpOnly: true
-    });
-
-    await page.evaluateOnNewDocument(() => {
-        const originalOpen = window.open;
-        window.open = function (...args) {
-            window.__NEW_TAB_URL__ = args[0];
-            return originalOpen.apply(window, args);
-        };
-    });
-
     try {
-        const response = await page.goto(request.url, {
-            waitUntil: "domcontentloaded",
-            timeout: 20000
-        });
-
-        if (response.status() === 429) {
-            log.warning('Rate limit hit, waiting 15s...');
-            await new Promise(r => setTimeout(r, 15000));
-            throw new Error('Rate limited');
-        }
-
-        await page.waitForSelector('#job-details', { timeout: 20000 });
-        await new Promise(r => setTimeout(r, 500));
-
-        const seeMoreButton = await page.$('.jobs-description__footer-button');
-        if (seeMoreButton) {
-            await seeMoreButton.click();
-            await new Promise(r => setTimeout(r, 500));
-        }
-
-        let applyUrl = request.url;
-        const applyButton = await page.$('.jobs-apply-button--top-card');
+        await page.waitForSelector('.scaffold-layout__list', { timeout: 10000 });
         
-        if (applyButton) {
-            const buttonText = await page.evaluate(button => button.textContent.trim(), applyButton);
+        while (results.length < maxJobs) {
+            const jobs = await page.$$('.jobs-search-results__list-item');
             
-            if (buttonText.includes("Candidatar-se")) {
-                await applyButton.click();
-                await new Promise(r => setTimeout(r, 1000));
-
-                const newTabUrl = await page.evaluate(() => window.__NEW_TAB_URL__);
-                if (newTabUrl) {
-                    applyUrl = newTabUrl;
-                } else {
-                    const newPagePromise = new Promise(resolve => page.browser().once('targetcreated', target => resolve(target.page())));
-                    const newPage = await newPagePromise;
-                    if (newPage) {
-                        applyUrl = await newPage.url();
-                        await newPage.close();
-                    }
-                }
+            for (const job of jobs) {
+                if (results.length >= maxJobs) break;
+                
+                await job.click();
+                await page.waitForSelector('#job-details', { timeout: 5000 });
+                
+                const details = await extractJobDetails(page);
+                results.push(details);
+                
+                await Actor.pushData(details);
+            }
+            
+            if (results.length < maxJobs) {
+                const hasNextPage = await goToNextPage(page);
+                if (!hasNextPage) break;
             }
         }
-
-        const details = await page.evaluate(() => ({
-            description: document.querySelector('#job-details')?.innerText.trim() || '',
-            title: document.querySelector('.job-details-jobs-unified-top-card__job-title')?.innerText.trim() || '',
-            company: document.querySelector('.job-details-jobs-unified-top-card__company-name')?.innerText.trim() || '',
-            location: document.querySelector('.job-details-jobs-unified-top-card__primary-description-container')?.innerText.trim().split(' ·')[0].trim() || ''
-        }));
-
-        await Dataset.pushData({
-            ...request.userData.jobData,
-            ...details,
-            applyUrl,
-            scrapedAt: new Date().toISOString()
-        });
-
     } catch (error) {
-        log.error(`Failed to process job detail: ${error.message}`);
+        log.error('Scraping failed:', error);
         throw error;
     }
-});
+};
+
+async function extractJobDetails(page) {
+    const title = await page.$eval('h1', el => el.textContent.trim());
+    const company = await page.$eval('.jobs-unified-top-card__company-name', el => el.textContent.trim());
+    const description = await page.$eval('#job-details', el => el.textContent.trim());
+    
+    let applyUrl = '';
+    try {
+        const applyButton = await page.$('.jobs-apply-button--top-card');
+        if (applyButton) {
+            await applyButton.click();
+            await page.waitForSelector('.jobs-apply-button', { timeout: 3000 });
+            applyUrl = await page.evaluate(() => {
+                const link = document.querySelector('.jobs-apply-button');
+                return link ? link.href : '';
+            });
+        }
+    } catch (e) {
+        // Application url not available
+    }
+    
+    return {
+        title,
+        company,
+        description,
+        applyUrl,
+        url: page.url()
+    };
+}
+
+async function goToNextPage(page) {
+    const nextButton = await page.$('button[aria-label="Next"]');
+    if (!nextButton) return false;
+    
+    await nextButton.click();
+    await page.waitForSelector('.scaffold-layout__list');
+    await page.waitForTimeout(1000); // Rate limiting protection
+    
+    return true;
+}
+
+// INPUT_SCHEMA.json
+{
+    "title": "LinkedIn Jobs Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "searchTerm": {
+            "title": "Search Term",
+            "type": "string",
+            "description": "Job search keyword",
+            "editor": "textfield"
+        },
+        "location": {
+            "title": "Location",
+            "type": "string",
+            "description": "Job location",
+            "editor": "textfield"
+        },
+        "li_at": {
+            "title": "LinkedIn Cookie",
+            "type": "string",
+            "description": "LinkedIn authentication cookie value",
+            "editor": "textfield"
+        },
+        "maxJobs": {
+            "title": "Maximum Jobs",
+            "type": "integer",
+            "description": "Maximum number of jobs to scrape",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 1000
+        },
+        "maxConcurrency": {
+            "title": "Max Concurrency",
+            "type": "integer",
+            "description": "Maximum concurrent requests",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 10
+        },
+        "timeout": {
+            "title": "Timeout",
+            "type": "integer",
+            "description": "Request timeout in milliseconds",
+            "default": 30000,
+            "minimum": 10000,
+            "maximum": 60000
+        }
+    },
+    "required": ["searchTerm", "location", "li_at"]
+}
