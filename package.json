@@ -1,15 +1,11 @@
 {
   "name": "linkedin-scraper-apify",
   "version": "1.0.0",
-  "description": "LinkedIn scraper actor",
   "type": "module",
   "scripts": {
     "start": "node main.js"
   },
   "dependencies": {
-    "@apify/scraper-tools": "^1.1.2",
-    "apify": "^3.1.8",
-    "got-scraping": "^3.2.15",
-    "puppeteer": "21.1.1"
+    "apify": "^3.1.8"
   }
 }
