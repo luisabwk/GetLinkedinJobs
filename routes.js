@@ -28,17 +28,19 @@ export async function getJobListings(browser, searchTerm, location, li_at, maxJo
             await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
             console.log("[INFO] Page loaded successfully.");
 
-            // Wait for job list container
-            await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
-
-            // Debug DOM content to verify structure
-            const contentHtml = await page.content();
-            console.log("[DEBUG] Page HTML snapshot captured.");
+            // Wait for job list container and validate presence of job cards
+            try {
+                await page.waitForSelector('.job-card-list__title--link', { timeout: 30000 });
+                console.log("[INFO] Job links detected on the page.");
+            } catch (error) {
+                console.warn("[WARN] No job links found on the page. Skipping...");
+                break;
+            }
 
             // Extract job links
             const jobLinks = await page.evaluate(() => {
-                const jobElements = Array.from(document.querySelectorAll('.job-card-container--clickable'));
-                return jobElements.map(el => el.querySelector('a')?.href).filter(href => href && href.includes('/jobs/view/'));
+                const jobElements = Array.from(document.querySelectorAll('.job-card-list__title--link'));
+                return jobElements.map(el => el.href).filter(href => href.includes('/jobs/view/'));
             });
 
             console.log(`[INFO] Found ${jobLinks.length} job links on page ${currentPage}`);
@@ -55,6 +57,8 @@ export async function getJobListings(browser, searchTerm, location, li_at, maxJo
                 break;
             }
 
+            await nextButton.click();
+            await sleep(2000);
             currentPage++;
         } catch (error) {
             console.error(`[ERROR] Error on page ${currentPage}: ${error.message}`);
