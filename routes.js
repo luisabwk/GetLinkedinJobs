@@ -33,6 +33,7 @@ export const Router = async ({ url, page, maxJobs }) => {
                 continue;
             }
             
+            console.log('Page content:', await page.content());
             const jobListExists = await page.evaluate(() => {
                 return !!document.querySelector('.scaffold-layout__list') 
                     || !!document.querySelector('.jobs-search-results-list');
