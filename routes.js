@@ -1,10 +1,11 @@
+// routes.js
 import { Actor } from 'apify';
 
-export const Router = async ({ request, page, log }) => {
-    const { maxJobs } = request.userData;
+export const Router = async ({ url, page, maxJobs }) => {
     const results = [];
     
     try {
+        await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
         await page.waitForTimeout(3000);
         await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
         
@@ -29,7 +30,7 @@ export const Router = async ({ request, page, log }) => {
             }
         }
     } catch (error) {
-        log.error('Scraping failed:', error);
+        console.error('Scraping failed:', error);
         throw error;
     }
 };
