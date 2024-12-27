@@ -1,5 +1,6 @@
 // main.js
-import { Actor, PlaywrightCrawler } from 'apify';
+import { Actor } from 'apify';
+import { PlaywrightCrawler } from '@crawlee/playwright';
 import { Router } from './routes.js';
 
 await Actor.init();
@@ -13,7 +14,7 @@ const {
     timeout = 60000,
 } = await Actor.getInput();
 
-const crawler = await Actor.createPlaywrightCrawler({
+const crawler = new PlaywrightCrawler({
     requestHandler: Router,
     maxConcurrency: 1,
     navigationTimeoutSecs: 60,
