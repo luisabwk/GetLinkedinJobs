@@ -1,3 +1,4 @@
+// routes.js
 import { Actor } from 'apify';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7,7 +8,7 @@ async function authenticate(page, li_at) {
         name: 'li_at',
         value: li_at,
         domain: '.linkedin.com',
-        path: '/',
+        path: '/'
     });
 }
 
@@ -19,9 +20,6 @@ export const Router = async ({ url, page, maxJobs, li_at }) => {
     while (retries < maxRetries) {
         try {
             await page.setDefaultNavigationTimeout(120000);
-            
-            // Set cookie before navigation
-            const li_at = await Actor.getValue('li_at');
             await authenticate(page, li_at);
             
             await page.goto(url, { 
@@ -31,32 +29,21 @@ export const Router = async ({ url, page, maxJobs, li_at }) => {
             
             await sleep(5000);
             
-            // Check authentication
-            const isAuthWall = await page.evaluate(() => {
-                return document.body.textContent.includes('Cadastre-se') || 
-                       document.body.textContent.includes('Sign in');
+            const jobListExists = await page.evaluate(() => {
+                return !!document.querySelector('.jobs-search-results-list');
             });
-
-            if (isAuthWall) {
-                console.log('Auth wall detected, retrying with new cookie...');
+            
+            if (!jobListExists) {
+                console.log('Job list not found, retrying...');
+                await sleep(5000);
                 retries++;
-                await sleep(10000);
                 continue;
             }
-
-            // Extract jobs
+            
             while (results.length < maxJobs) {
-                await sleep(3000);
-                const jobs = await page.$$('.job-card-container');
+                const jobs = await page.$$('.jobs-search-results__list-item');
+                if (!jobs.length) break;
                 
-                if (!jobs.length) {
-                    const noResults = await page.evaluate(() => {
-                        return document.body.textContent.includes('Não encontramos') ||
-                               document.body.textContent.includes('No results found');
-                    });
-                    if (noResults) break;
-                }
-
                 for (const job of jobs) {
                     if (results.length >= maxJobs) break;
                     
@@ -64,10 +51,8 @@ export const Router = async ({ url, page, maxJobs, li_at }) => {
                     await sleep(2000);
                     
                     const details = await extractJobDetails(page);
-                    if (details.title) {
-                        results.push(details);
-                        await Actor.pushData(details);
-                    }
+                    results.push(details);
+                    await Actor.pushData(details);
                 }
                 
                 if (results.length < maxJobs) {
@@ -76,7 +61,7 @@ export const Router = async ({ url, page, maxJobs, li_at }) => {
                 }
             }
             
-            break; // Success
+            break;
             
         } catch (error) {
             console.error(`Attempt ${retries + 1} failed:`, error);
@@ -90,17 +75,21 @@ export const Router = async ({ url, page, maxJobs, li_at }) => {
 async function extractJobDetails(page) {
     try {
         const title = await page.$eval('h1', el => el.textContent.trim());
-        const company = await page.$eval('.job-details-jobs-unified-top-card__company-name', 
+        const company = await page.$eval('.jobs-unified-top-card__company-name', 
             el => el.textContent.trim());
-        const description = await page.$eval('.job-details-jobs-unified-top-card__job-insight', 
+        const description = await page.$eval('#job-details', 
             el => el.textContent.trim());
         
         let applyUrl = '';
         try {
-            const applyButton = await page.$('.sign-up-modal__outlet');
+            const applyButton = await page.$('.jobs-apply-button--top-card');
             if (applyButton) {
-                const href = await page.evaluate(el => el.getAttribute('href'), applyButton);
-                applyUrl = href || '';
+                await applyButton.click();
+                await page.waitForSelector('.jobs-apply-button', { timeout: 5000 });
+                applyUrl = await page.evaluate(() => {
+                    const link = document.querySelector('.jobs-apply-button');
+                    return link ? link.href : '';
+                });
             }
         } catch (e) {}
         
@@ -113,12 +102,18 @@ async function extractJobDetails(page) {
         };
     } catch (e) {
         console.error('Error extracting details:', e);
-        return {};
+        return {
+            title: '',
+            company: '',
+            description: '',
+            applyUrl: '',
+            url: page.url()
+        };
     }
 }
 
 async function goToNextPage(page) {
-    const nextButton = await page.$('button[aria-label="Avançar"]');
+    const nextButton = await page.$('button[aria-label="Next"]');
     if (!nextButton) return false;
     
     await nextButton.click();
