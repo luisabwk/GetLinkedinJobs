@@ -1,7 +1,7 @@
 // main.js
 import { Actor } from 'apify';
-import puppeteer from 'puppeteer';
 import { getJobListings } from './routes.js';
+import puppeteer from 'puppeteer';
 
 await Actor.init();
 
@@ -19,19 +19,17 @@ const browser = await puppeteer.launch({
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--disable-notifications'
+        '--disable-gpu'
     ]
 });
 
 try {
-    await getJobListings({ 
-        browser,
-        searchTerm,
-        location,
-        li_at,
-        maxJobs
-    });
+    const page = await browser.newPage();
+    await getJobListings(page, 
+        `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(searchTerm)}&location=${encodeURIComponent(location)}`,
+        maxJobs,
+        li_at
+    );
 } catch (error) {
     console.error('Error:', error);
 } finally {
