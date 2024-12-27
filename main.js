@@ -1,5 +1,5 @@
 // main.js
-import { Actor } from 'apify';
+import { Actor, PlaywrightCrawler } from 'apify';
 import { Router } from './routes.js';
 
 await Actor.init();
@@ -9,18 +9,18 @@ const {
     location,
     li_at,
     maxJobs = 25,
-    maxConcurrency = 5,
-    timeout = 30000,
+    maxConcurrency = 1,
+    timeout = 60000,
 } = await Actor.getInput();
 
 const crawler = await Actor.createPlaywrightCrawler({
     requestHandler: Router,
-    maxConcurrency: 1, // Reduzido para evitar 429
-    navigationTimeoutSecs: 60, // Aumentado para 60s
+    maxConcurrency: 1,
+    navigationTimeoutSecs: 60,
     maxRequestRetries: 5,
-    requestHandlerTimeoutSecs: 180, // 3 min total
+    requestHandlerTimeoutSecs: 180,
     browserPoolOptions: {
-        useFingerprints: true, // Adiciona fingerprints
+        useFingerprints: true,
         fingerprintOptions: {
             screen: { width: 1920, height: 1080 }
         }
@@ -32,7 +32,6 @@ const crawler = await Actor.createPlaywrightCrawler({
             });
         }
     ],
-    requestHandlerTimeoutSecs: timeout / 1000,
 });
 
 await crawler.run([{
