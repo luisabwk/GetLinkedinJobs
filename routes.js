@@ -1,16 +1,17 @@
-// routes.js
 import { Actor } from 'apify';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function checkForBlockPage(page) {
-    return page.evaluate(() => {
-        return document.body.textContent.includes('Sign in') 
-            || document.body.textContent.includes('Security Verification');
+async function authenticate(page, li_at) {
+    await page.setCookie({
+        name: 'li_at',
+        value: li_at,
+        domain: '.linkedin.com',
+        path: '/',
     });
 }
 
-export const Router = async ({ url, page, maxJobs }) => {
+export const Router = async ({ url, page, maxJobs, li_at }) => {
     const results = [];
     let retries = 0;
     const maxRetries = 3;
@@ -18,6 +19,11 @@ export const Router = async ({ url, page, maxJobs }) => {
     while (retries < maxRetries) {
         try {
             await page.setDefaultNavigationTimeout(120000);
+            
+            // Set cookie before navigation
+            const li_at = await Actor.getValue('li_at');
+            await authenticate(page, li_at);
+            
             await page.goto(url, { 
                 waitUntil: 'networkidle0',
                 timeout: 120000 
@@ -25,41 +31,43 @@ export const Router = async ({ url, page, maxJobs }) => {
             
             await sleep(5000);
             
-            const isBlocked = await checkForBlockPage(page);
-            if (isBlocked) {
-                console.log('Detected block/login page, retrying...');
-                await sleep(10000);
+            // Check authentication
+            const isAuthWall = await page.evaluate(() => {
+                return document.body.textContent.includes('Cadastre-se') || 
+                       document.body.textContent.includes('Sign in');
+            });
+
+            if (isAuthWall) {
+                console.log('Auth wall detected, retrying with new cookie...');
                 retries++;
+                await sleep(10000);
                 continue;
             }
-            
-            console.log('Page content:', await page.content());
-            const jobListExists = await page.evaluate(() => {
-                return !!document.querySelector('.scaffold-layout__list') 
-                    || !!document.querySelector('.jobs-search-results-list');
-            });
-            
-            if (!jobListExists) {
-                throw new Error('Job list not found');
-            }
-            
+
+            // Extract jobs
             while (results.length < maxJobs) {
-                const jobs = await page.$$('.jobs-search-results__list-item');
-                if (!jobs.length) break;
+                await sleep(3000);
+                const jobs = await page.$$('.job-card-container');
                 
+                if (!jobs.length) {
+                    const noResults = await page.evaluate(() => {
+                        return document.body.textContent.includes('Não encontramos') ||
+                               document.body.textContent.includes('No results found');
+                    });
+                    if (noResults) break;
+                }
+
                 for (const job of jobs) {
                     if (results.length >= maxJobs) break;
                     
                     await job.click();
                     await sleep(2000);
                     
-                    if (await page.$('#job-details')) {
-                        const details = await extractJobDetails(page);
+                    const details = await extractJobDetails(page);
+                    if (details.title) {
                         results.push(details);
                         await Actor.pushData(details);
                     }
-                    
-                    await sleep(1000);
                 }
                 
                 if (results.length < maxJobs) {
@@ -68,7 +76,7 @@ export const Router = async ({ url, page, maxJobs }) => {
                 }
             }
             
-            break; // Success, exit retry loop
+            break; // Success
             
         } catch (error) {
             console.error(`Attempt ${retries + 1} failed:`, error);
@@ -82,19 +90,19 @@ export const Router = async ({ url, page, maxJobs }) => {
 async function extractJobDetails(page) {
     try {
         const title = await page.$eval('h1', el => el.textContent.trim());
-        const company = await page.$eval('.jobs-unified-top-card__company-name', el => el.textContent.trim());
-        const description = await page.$eval('#job-details', el => el.textContent.trim());
+        const company = await page.$eval('.job-details-jobs-unified-top-card__company-name', 
+            el => el.textContent.trim());
+        const description = await page.$eval('.job-details-jobs-unified-top-card__job-insight', 
+            el => el.textContent.trim());
         
         let applyUrl = '';
-        const applyButton = await page.$('.jobs-apply-button--top-card');
-        if (applyButton) {
-            await applyButton.click();
-            await sleep(1000);
-            const link = await page.$('.jobs-apply-button');
-            if (link) {
-                applyUrl = await page.evaluate(el => el.href, link);
+        try {
+            const applyButton = await page.$('.sign-up-modal__outlet');
+            if (applyButton) {
+                const href = await page.evaluate(el => el.getAttribute('href'), applyButton);
+                applyUrl = href || '';
             }
-        }
+        } catch (e) {}
         
         return {
             title,
@@ -104,18 +112,13 @@ async function extractJobDetails(page) {
             url: page.url()
         };
     } catch (e) {
-        return {
-            title: 'Error extracting details',
-            company: '',
-            description: '',
-            applyUrl: '',
-            url: page.url()
-        };
+        console.error('Error extracting details:', e);
+        return {};
     }
 }
 
 async function goToNextPage(page) {
-    const nextButton = await page.$('button[aria-label="Next"]');
+    const nextButton = await page.$('button[aria-label="Avançar"]');
     if (!nextButton) return false;
     
     await nextButton.click();
