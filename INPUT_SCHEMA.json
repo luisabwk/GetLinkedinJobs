@@ -1,37 +1,34 @@
 {
- "title": "LinkedIn Job Scraper Input",
- "type": "object",
- "schemaVersion": 1,
- "properties": {
-   "searchTerm": {
-     "title": "Search Term",
-     "type": "string",
-     "description": "Job search keyword or phrase",
-     "editor": "textfield"
-   },
-   "location": {
-     "title": "Location",
-     "type": "string", 
-     "description": "Location to search jobs in",
-     "default": "Brasil",
-     "editor": "textfield"
-   },
-   "li_at": {
-     "title": "LinkedIn Cookie",
-     "type": "string",
-     "description": "Your LinkedIn 'li_at' cookie value for authentication",
-     "editor": "textfield",
-     "isSecret": true
-   },
-   "maxJobs": {
-     "title": "Maximum Jobs",
-     "type": "integer",
-     "description": "Maximum number of jobs to scrape",
-     "default": 25,
-     "minimum": 1,
-     "maximum": 100,
-     "unit": "jobs"
-   }
- },
- "required": ["searchTerm", "location", "li_at"]
+    "title": "LinkedIn Jobs Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "searchTerm": {
+            "title": "Search Term",
+            "type": "string",
+            "description": "Job search keyword",
+            "editor": "textfield"
+        },
+        "location": {
+            "title": "Location",
+            "type": "string",
+            "description": "Job location",
+            "editor": "textfield"
+        },
+        "li_at": {
+            "title": "LinkedIn Cookie",
+            "type": "string",
+            "description": "LinkedIn authentication cookie value",
+            "editor": "textfield"
+        },
+        "maxJobs": {
+            "title": "Maximum Jobs",
+            "type": "integer",
+            "description": "Maximum number of jobs to scrape",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 1000
+        }
+    },
+    "required": ["searchTerm", "location", "li_at"]
 }
