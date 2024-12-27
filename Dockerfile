@@ -1,4 +1,4 @@
-FROM apify/actor-node-playwright-chrome:latest
+FROM apify/actor-node-puppeteer-chrome:latest
 
 COPY . ./
 
