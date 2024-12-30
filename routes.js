@@ -28,24 +28,17 @@ export async function getJobListings(browser, searchTerm, location, li_at, maxJo
             await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
             console.log("[INFO] Page loaded successfully.");
 
-            // Capture and log HTML content for debugging
-            const contentHtml = await page.content();
-            console.log("[DEBUG] Capturing HTML content for analysis...");
-            console.log(contentHtml);
-
-            // Wait for job list container and validate presence of job cards
-            try {
-                await page.waitForSelector('.job-card-list__title--link', { timeout: 30000 });
-                console.log("[INFO] Job links detected on the page.");
-            } catch (error) {
-                console.warn("[WARN] No job links found on the page. Skipping...");
-                break;
-            }
+            // Wait for job list container
+            await page.waitForSelector('.scaffold-layout__list', { timeout: 30000 });
+            console.log("[INFO] Job list container detected.");
 
             // Extract job links
             const jobLinks = await page.evaluate(() => {
-                const jobElements = Array.from(document.querySelectorAll('.job-card-list__title--link'));
-                return jobElements.map(el => el.href).filter(href => href.includes('/jobs/view/'));
+                const jobElements = Array.from(document.querySelectorAll(".job-card-container--clickable"));
+                return jobElements.map((job) => {
+                    const link = job.querySelector("a")?.href;
+                    return link && link.includes('/jobs/view/') ? link : null;
+                }).filter(link => link);
             });
 
             console.log(`[INFO] Found ${jobLinks.length} job links on page ${currentPage}`);
@@ -111,13 +104,16 @@ async function extractJobDetails(browser, jobUrl, li_at) {
         await page.setCookie({ name: "li_at", value: li_at, domain: ".linkedin.com" });
         await page.goto(jobUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-        // Expand full job description
         const seeMoreSelector = ".jobs-description__footer-button";
+        const applyButtonSelector = ".jobs-apply-button--top-card";
+
+        // Expand full job description
         try {
             await page.waitForSelector(seeMoreSelector, { timeout: 5000 });
             await page.click(seeMoreSelector);
+            console.log("[INFO] 'See more' button clicked.");
         } catch {
-            console.warn("[WARN] 'See more' button not found.");
+            console.warn("[WARN] 'See more' button not found or clickable.");
         }
 
         // Extract job details
@@ -143,16 +139,18 @@ async function extractJobDetails(browser, jobUrl, li_at) {
         });
 
         // Handle apply URL
-        const applyButton = await page.$(".jobs-apply-button--top-card");
+        const applyButton = await page.$(applyButtonSelector);
         if (applyButton) {
             const buttonText = await page.evaluate(btn => btn.textContent.trim(), applyButton);
             if (buttonText.includes("Candidatura simplificada")) {
                 jobDetails.applyUrl = jobUrl;
             } else if (buttonText.includes("Candidatar-se")) {
                 await applyButton.click();
-                await sleep(2000);
-                const newPage = await browser.waitForTarget(t => t.url() !== jobUrl);
-                jobDetails.applyUrl = newPage?.url() || jobUrl;
+                await sleep(3000);
+                const newPagePromise = new Promise(resolve => browser.once('targetcreated', target => resolve(target.page())));
+                const newPage = await newPagePromise;
+                jobDetails.applyUrl = await newPage.url();
+                await newPage.close();
             }
         } else {
             jobDetails.applyUrl = jobUrl;
