@@ -31,7 +31,7 @@ export async function getJobListings(browser, searchTerm, location, li_at, maxJo
             // Capture and log HTML content for debugging
             const contentHtml = await page.content();
             console.log("[DEBUG] Capturing HTML content for analysis...");
-            console.log(contentHtml); // This will print the HTML content to the logs
+            console.log(contentHtml);
 
             // Wait for job list container and validate presence of job cards
             try {
@@ -163,4 +163,6 @@ async function extractJobDetails(browser, jobUrl, li_at) {
         console.error(`[ERROR] Failed to extract job details: ${error.message}`);
         throw error;
     } finally {
-        if (page) await page.cl
+        if (page) await page.close();
+    }
+}
