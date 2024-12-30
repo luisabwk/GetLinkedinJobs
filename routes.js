@@ -28,6 +28,11 @@ export async function getJobListings(browser, searchTerm, location, li_at, maxJo
             await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
             console.log("[INFO] Page loaded successfully.");
 
+            // Capture and log HTML content for debugging
+            const contentHtml = await page.content();
+            console.log("[DEBUG] Capturing HTML content for analysis...");
+            console.log(contentHtml); // This will print the HTML content to the logs
+
             // Wait for job list container and validate presence of job cards
             try {
                 await page.waitForSelector('.job-card-list__title--link', { timeout: 30000 });
@@ -158,6 +163,4 @@ async function extractJobDetails(browser, jobUrl, li_at) {
         console.error(`[ERROR] Failed to extract job details: ${error.message}`);
         throw error;
     } finally {
-        if (page) await page.close();
-    }
-}
+        if (page) await page.cl
